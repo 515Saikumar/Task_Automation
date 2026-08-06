@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pymongo
+python-dotenv
+pandas
+openpyxl
+langchain
+langchain-ollama
+langgraph
+langchain-groq
+python-multipart
