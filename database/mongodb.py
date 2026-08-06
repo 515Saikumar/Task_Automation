@@ -20,3 +20,4 @@ db = client[DATABASE_NAME]
 # Export collections
 tasks_collection = db["tasks"]
 emp_collection = db["emp"]
+workprogress_collection = db["workprogress"] # <-- ADDED THIS LINE

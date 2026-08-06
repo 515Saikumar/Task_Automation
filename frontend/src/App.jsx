@@ -1,61 +1,149 @@
 import React, { useState, useEffect } from 'react';
-import './App.css'; // Import the custom CSS file
+import './App.css'; 
+
+const API_BASE_URL = "http://localhost:10000";
 
 export default function App() {
-  const [role, setRole] = useState(null);
+  const [view, setView] = useState('admin'); // 'admin' (public) or 'staff' (secure)
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [role, setRole] = useState(localStorage.getItem('role') || null);
+  const [empId, setEmpId] = useState(localStorage.getItem('empId') || null);
 
-  if (!role) {
-    return <LoginView setRole={setRole} />;
-  }
+  const handleLogin = (data) => {
+    setToken(data.access_token);
+    setRole(data.role);
+    try {
+      const payload = JSON.parse(atob(data.access_token.split('.')[1]));
+      setEmpId(payload.empid);
+      localStorage.setItem('empId', payload.empid);
+    } catch (e) {
+      console.error("Failed to parse token payload");
+    }
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('role', data.role);
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    setRole(null);
+    setEmpId(null);
+    localStorage.clear();
+    setView('admin'); // Kick back to public admin panel on logout
+  };
 
   return (
     <div className="app-container">
       <nav className="navbar">
         <h1>AI Task Manager</h1>
         <div className="user-info">
-          <span>Logged in as: <strong>{role.toUpperCase()}</strong></span>
-          <button onClick={() => setRole(null)} className="btn btn-danger">
-            Logout
-          </button>
+          {token ? (
+            <>
+              <span>ID: <strong>{empId}</strong> ({role?.toUpperCase()})</span>
+              <button onClick={handleLogout} className="btn btn-danger">Logout</button>
+            </>
+          ) : (
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                onClick={() => setView('admin')} 
+                style={{ backgroundColor: view === 'admin' ? '#1d4ed8' : '#3b82f6', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                Public Admin (Upload)
+              </button>
+              <button 
+                onClick={() => setView('staff')} 
+                style={{ backgroundColor: view === 'staff' ? '#1d4ed8' : '#3b82f6', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                Secure Staff Portal
+              </button>
+            </div>
+          )}
         </div>
       </nav>
 
       <main className="main-content">
-        {role === 'admin' ? <AdminDashboard /> : <EmployeeDashboard />}
+        {token ? (
+          /* Logged In Views */
+          role === 'qa' ? <QADashboard token={token} /> : <EmployeeDashboard token={token} />
+        ) : (
+          /* Logged Out Views */
+          view === 'admin' ? <AdminDashboard /> : <LoginView onLogin={handleLogin} />
+        )}
       </main>
     </div>
   );
 }
 
-function LoginView({ setRole }) {
+// ==========================================
+// SECURE LOGIN COMPONENT (Staff Only)
+// ==========================================
+function LoginView({ onLogin }) {
+  const [email, setEmail] = useState('');
+  const [employeeId, setEmployeeId] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, employee_id: employeeId })
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Login failed');
+      
+      onLogin(data);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   return (
     <div className="login-wrapper">
       <div className="login-card">
-        <h2>System Login</h2>
-        <p>Select your portal to continue.</p>
-        <button onClick={() => setRole('admin')} className="btn btn-primary">
-          Login as Admin
-        </button>
-        <button onClick={() => setRole('employee')} className="btn btn-success">
-          Login as Employee
-        </button>
+        <h2>Staff Portal Login</h2>
+        <p>Enter your Email and Employee ID to manage your assigned tasks.</p>
+        
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <input 
+            type="email" 
+            placeholder="Email Address" 
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="file-input"
+            required
+          />
+          <input 
+            type="text" 
+            placeholder="Employee ID (e.g. EMP001)" 
+            value={employeeId}
+            onChange={(e) => setEmployeeId(e.target.value)}
+            className="file-input"
+            required
+          />
+          <button type="submit" className="btn btn-primary">Login</button>
+        </form>
+        {error && <p style={{ color: 'red', marginTop: '1rem' }}>{error}</p>}
       </div>
     </div>
   );
 }
 
+// ==========================================
+// PUBLIC ADMIN DASHBOARD (Excel Upload)
+// ==========================================
 function AdminDashboard() {
   const [file, setFile] = useState(null);
   const [tasksFiles, setTasksFiles] = useState([]);
   const [statusMsg, setStatusMsg] = useState("");
 
-  const API_BASE_URL = "http://localhost:10000/api";
-
   const fetchTasksFiles = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/tasks`);
+      const response = await fetch(`${API_BASE_URL}/api/tasks`);
       const data = await response.json();
-      
       const sortedData = data.sort((a, b) => new Date(b.uploaded_at) - new Date(a.uploaded_at));
       setTasksFiles(sortedData);
     } catch (error) {
@@ -79,7 +167,7 @@ function AdminDashboard() {
 
     try {
       setStatusMsg("Uploading and triggering AI Allocation...");
-      const response = await fetch(`${API_BASE_URL}/upload-excel`, {
+      const response = await fetch(`${API_BASE_URL}/api/upload-excel`, {
         method: "POST",
         body: formData,
       });
@@ -99,11 +187,12 @@ function AdminDashboard() {
 
   return (
     <div>
-      <h2 className="dashboard-header">Admin Control Panel</h2>
+      <h2 className="dashboard-header">Public Admin Panel</h2>
+      <p style={{marginBottom: "20px", color: "#4b5563"}}>Upload task lists here. The AI will automatically parse the Excel file, assign tasks to employees in MongoDB, and email them.</p>
       
       <div className="card">
         <h3>Upload New Task Excel</h3>
-        <form onSubmit={handleUpload} className="upload-form">
+        <form onSubmit={handleUpload} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <input 
             type="file" 
             accept=".xlsx, .xls" 
@@ -111,14 +200,14 @@ function AdminDashboard() {
             className="file-input"
           />
           <button type="submit" className="btn btn-upload">
-            Upload to MongoDB
+            Upload & Auto-Assign
           </button>
         </form>
         {statusMsg && <p className="status-msg">{statusMsg}</p>}
       </div>
 
       <div className="card">
-        <h3>Recent Task Files in Database (Latest First)</h3>
+        <h3>Recent Excel Task Files</h3>
         {tasksFiles.length === 0 ? (
           <p style={{ color: '#6b7280' }}>No task files uploaded yet.</p>
         ) : (
@@ -152,14 +241,169 @@ function AdminDashboard() {
   );
 }
 
-function EmployeeDashboard() {
+// ==========================================
+// EMPLOYEE DASHBOARD
+// ==========================================
+function EmployeeDashboard({ token }) {
+  const [tasks, setTasks] = useState([]);
+  const [updateText, setUpdateText] = useState({}); 
+
+  const fetchTasks = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/tasks/my`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) setTasks(await res.json());
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => { fetchTasks(); }, []);
+
+  const handleProgress = async (taskId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/progress`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ taskupdate: updateText[taskId] || "" })
+      });
+      if (res.ok) {
+        alert("Progress updated!");
+        fetchTasks();
+      } else {
+        const error = await res.json();
+        alert(error.detail);
+      }
+    } catch (err) { alert("Failed to update"); }
+  };
+
+  const handleComplete = async (taskId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/complete`, {
+        method: 'PATCH',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        alert("Task Sent to QA!");
+        fetchTasks();
+      } else {
+        const error = await res.json();
+        alert(error.detail);
+      }
+    } catch (err) { alert("Failed to complete"); }
+  };
+
   return (
-    <div className="card" style={{ textAlign: 'center' }}>
-      <h2 className="dashboard-header">Employee Workspace</h2>
-      <p style={{ color: '#4b5563', lineHeight: '1.6' }}>
-        Welcome! When the Admin uploads an Excel file, the AI backend automatically allocates tasks and emails you. 
-        You will see your assigned tasks here in a future update.
-      </p>
+    <div>
+      <h2 className="dashboard-header">My Tasks</h2>
+      <div className="card">
+        {tasks.length === 0 ? <p>No tasks assigned yet.</p> : (
+          <div className="table-container">
+            <table className="data-table">
+              <thead><tr><th>Task</th><th>Status</th><th>Due Date</th><th>QA Remarks</th><th>Action</th></tr></thead>
+              <tbody>
+                {tasks.map(t => (
+                  <tr key={t._id}>
+                    <td>{t.task}</td>
+                    <td><span className="badge">{t.status}</span></td>
+                    <td>{new Date(t.duedate).toLocaleDateString()}</td>
+                    <td style={{ color: 'red', fontSize: '12px' }}>{t.remarks || 'None'}</td>
+                    <td>
+                      {['Assigned', 'In Progress', 'Rework Required'].includes(t.status) && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          <input 
+                            type="text" placeholder="Latest update..." 
+                            className="file-input" style={{ width: '200px' }}
+                            value={updateText[t._id] || t.taskupdate || ''}
+                            onChange={(e) => setUpdateText({...updateText, [t._id]: e.target.value})}
+                          />
+                          <button onClick={() => handleProgress(t._id)} className="btn btn-upload" style={{ padding: '4px' }}>Save Progress</button>
+                          {t.status === 'In Progress' && (
+                             <button onClick={() => handleComplete(t._id)} className="btn btn-success" style={{ padding: '4px' }}>Mark Done (Send to QA)</button>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ==========================================
+// QA DASHBOARD
+// ==========================================
+function QADashboard({ token }) {
+  const [tasks, setTasks] = useState([]);
+  const [remarks, setRemarks] = useState({});
+
+  const fetchQueue = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/tasks/qa-queue`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) setTasks(await res.json());
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => { fetchQueue(); }, []);
+
+  const handleReview = async (taskId, status) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/review`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ remarks: remarks[taskId] || "Reviewed", status: status })
+      });
+      if (res.ok) {
+        alert(`Task marked as ${status}`);
+        fetchQueue();
+      } else {
+        const error = await res.json();
+        alert(error.detail);
+      }
+    } catch (err) { alert("Review failed"); }
+  };
+
+  return (
+    <div>
+      <h2 className="dashboard-header">QA Review Queue</h2>
+      <div className="card">
+        {tasks.length === 0 ? <p>No tasks pending review.</p> : (
+          <div className="table-container">
+            <table className="data-table">
+              <thead><tr><th>EmpID</th><th>Task</th><th>Employee Update</th><th>Review Action</th></tr></thead>
+              <tbody>
+                {tasks.map(t => (
+                  <tr key={t._id}>
+                    <td>{t.empid}</td>
+                    <td>{t.task}</td>
+                    <td><em>{t.taskupdate || 'No update provided'}</em></td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                        <input 
+                          type="text" placeholder="QA Feedback / Remarks" 
+                          className="file-input" style={{ width: '250px' }}
+                          value={remarks[t._id] || ''}
+                          onChange={(e) => setRemarks({...remarks, [t._id]: e.target.value})}
+                        />
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <button onClick={() => handleReview(t._id, 'Approved')} className="btn btn-success" style={{ padding: '6px' }}>Approve</button>
+                          <button onClick={() => handleReview(t._id, 'Rework Required')} className="btn btn-danger" style={{ padding: '6px' }}>Reject (Rework)</button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

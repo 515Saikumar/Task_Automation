@@ -1,10 +1,9 @@
 import os
 import sys
 from dotenv import load_dotenv
+from datetime import datetime, timezone # <-- ADDED timezone for proper timestamps
 
 # --- DIRECTORY PATH FIX ---
-# Ensures Python can find your 'database', 'agent', and 'tools' folders 
-# if you run this script from inside a subfolder.
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
@@ -17,12 +16,11 @@ import io
 import pandas as pd
 
 from agent.graph import graph
-from database.mongodb import tasks_collection
+# --- ADDED workprogress_collection import ---
+from database.mongodb import tasks_collection, workprogress_collection
 from bson import ObjectId
 
-# --- ADDED: Import the new email tool ---
 from tools.email_tool import send_task_email
-# ----------------------------------------
 
 def process_excel(file_id: str):
     # Fetch Excel document from MongoDB
@@ -36,12 +34,10 @@ def process_excel(file_id: str):
     df = pd.read_excel(excel_bytes)
 
     # Check if the user forgot the "Task" header
-    # If "Task" isn't found, we reload treating the first row as data, not a header!
     if "Task" not in df.columns.str.strip().str.title():
-        excel_bytes.seek(0)  # Reset the file reader
+        excel_bytes.seek(0)
         df = pd.read_excel(excel_bytes, header=None, names=["Task"])
     else:
-        # Standardize the column names if the header DOES exist
         df.columns = df.columns.str.strip().str.title()
 
     # Process each task
@@ -84,21 +80,47 @@ def process_excel(file_id: str):
         print("-" * 70)
         print(f"Employee ID      : {employee['employee_id']}")
         print(f"Name             : {employee['name']}")
-        print(f"Department       : {employee['department']}")
-        print(f"Designation      : {employee['designation']}")
-        print(f"Experience       : {employee['experience']} Years")
-        print(f"Performance      : {employee['performance_score']}")
-        print(f"Current Tasks    : {employee['active_tasks']}")
         print(f"Email            : {employee['email']}")
 
-        print("\nStatus")
-        print("-" * 70)
-        print(result["result"]["status"])
-
-        # --- ADDED: Send the email to the assigned employee! ---
+        # --- Send the email ---
         print("\nSending Notification Email...")
         send_task_email(employee, task)
-        # -------------------------------------------------------
+        
+        # --- NEW: PREVENT DUPLICATES & SAVE TO WORKPROGRESS ---
+        print("Checking for duplicates in workprogress database...")
+        
+        # Ensure the date is stored as a proper string or datetime
+        due_date_val = task.get('due_date', '')
+        try:
+            # Try to format it cleanly if the LLM returned YYYY-MM-DD
+            due_date_val = datetime.strptime(due_date_val, "%Y-%m-%d")
+        except:
+            pass # Keep it as a string if it's words like "ASAP" or "Not Specified"
+
+        # Check if this exact task is already active for this employee
+        existing_task = workprogress_collection.find_one({
+            "empid": employee['employee_id'],
+            "task": task['task_name'],
+            "status": {"$in": ["Assigned", "In Progress", "Rework Required", "Under QA Review"]}
+        })
+
+        if existing_task:
+            print(f"⚠️ Duplicate detected: '{task['task_name']}' is already assigned to {employee['name']}. Skipping database insert.")
+        else:
+            workprogress_doc = {
+                "empid": employee['employee_id'],
+                "task": task['task_name'],
+                "duedate": due_date_val,
+                "taskupdate": "",
+                "status": "In Progress", 
+                "remarks": "",
+                "createdAt": datetime.now(timezone.utc), # <-- FIXED Deprecation warning
+                "updatedAt": datetime.now(timezone.utc)  # <-- FIXED Deprecation warning
+            }
+            
+            workprogress_collection.insert_one(workprogress_doc)
+            print("✅ Task successfully added to workprogress!")
+        # ---------------------------------------------
 
         print("\n")
 
@@ -107,16 +129,10 @@ if __name__ == "__main__":
     import pymongo
     
     print("Fetching the most recently uploaded Excel file from MongoDB...")
-    
-    # --- FIXED: Changed excel_collection to tasks_collection ---
-    # Sort by '_id' in descending order to get the newest file
     latest_document = tasks_collection.find_one({}, sort=[("_id", pymongo.DESCENDING)])
-    # -----------------------------------------------------------
     
     if latest_document:
         print(f"Found file: {latest_document.get('filename')} | ID: {latest_document['_id']}\n")
-        
-        # Automatically process it!
         process_excel(str(latest_document["_id"]))
     else:
         print("No Excel files found in the database. Please upload one via the frontend first.")

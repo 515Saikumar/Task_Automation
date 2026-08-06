@@ -2,6 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.upload_api import router as upload_router
 from api.employee_api import router as employee_router
+from api.auth_api import router as auth_router
+from api.workflow_api import router as workflow_router  # <-- ADDED THIS
+
 import uvicorn
 
 app = FastAPI(title="AI Task Manager API")
@@ -17,6 +20,8 @@ app.add_middleware(
 
 app.include_router(upload_router, prefix="/api")
 app.include_router(employee_router, prefix="/api")
+app.include_router(auth_router)
+app.include_router(workflow_router)  # <-- ADDED THIS
 
 @app.get("/")
 def health_check():
