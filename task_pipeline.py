@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone, timedelta
 from langchain_groq import ChatGroq
 
+# Import the validator from your tools folder
 from tools.due_date_tool import validate_due_date
 
 llm = ChatGroq(
@@ -44,6 +45,10 @@ def detect_category(text):
     return "General"
 
 def extract_task(text):
+    # Fallback for empty rows in Excel
+    if not text or str(text).strip() == "":
+        text = "Empty task description provided."
+
     # Get today's exact date in IST
     ist_tz = timezone(timedelta(hours=5, minutes=30))
     current_date = datetime.now(ist_tz).strftime('%Y-%m-%d')
@@ -57,29 +62,40 @@ IMPORTANT DATE RULES:
 3. If the text mentions a day (e.g., "Tuesday"), calculate the exact YYYY-MM-DD for the upcoming Tuesday based on today's date.
 4. If no date is mentioned, default to today's date: {current_date}.
 
-Return ONLY valid JSON containing:
-{{
-    "task_name": "",
-    "priority": "",
-    "due_date": "",
-    "description": "",
-    "required_skills": []
-}}
-Text: {text}
+Return ONLY valid JSON containing the following keys: "task_name", "priority", "due_date", "description", "required_skills".
+Do not include any conversational text.
+
+Text to analyze: {text}
+
+JSON Output:
 """
-    response = llm.invoke(prompt)
-    
-    # Clean the response to prevent basic markdown issues
-    clean_response = response.content.replace("```json", "").replace("```", "").strip()
-    
     try:
-        task = json.loads(clean_response)
-    except json.JSONDecodeError:
+        response = llm.invoke(prompt)
+        raw_text = response.content
+        
+        # Extract ONLY the JSON dictionary from the AI's response
+        start_idx = raw_text.find('{')
+        end_idx = raw_text.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1:
+            clean_json_str = raw_text[start_idx:end_idx+1]
+        else:
+            clean_json_str = "" # Trigger fallback if no brackets are found
+            
+        task = json.loads(clean_json_str, strict=False)
+        
+    except Exception as e:
+        print(f"⚠️ Extraction Error: Using fallback task. Reason: {e}")
+        
+        # Use the original text as the task name (capped at 60 chars for the UI)
+        raw_input_text = str(text).strip()
+        fallback_title = raw_input_text[:60] + "..." if len(raw_input_text) > 60 else raw_input_text
+        
         task = {
-            "task_name": "Failed to parse",
+            "task_name": fallback_title,
             "priority": "Normal",
             "due_date": current_date, # Fallback to today
-            "description": "JSON parsing error.",
+            "description": raw_input_text, # Keep the full text in the description
             "required_skills": []
         }
 

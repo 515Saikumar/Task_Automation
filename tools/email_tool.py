@@ -42,6 +42,7 @@ def generate_ai_email_content(employee, task, formatted_due_date):
     prompt = f"""
 You are an engineering manager's AI assistant. Draft a professional task assignment email body.
 IMPORTANT: Do NOT include any sign-off, closing, or signature (like "Best regards" or "[Your Name]") at the end of your body.
+You MUST write a real, professional email. Do NOT just copy the example text.
 
 Employee Name: {employee.get('name')}
 Designation: {employee.get('designation')}
@@ -52,9 +53,11 @@ Priority: {task.get('priority', 'Normal')}
 Due Date: {formatted_due_date}
 
 Return ONLY valid JSON with two keys: "subject" and "body". Do not use unescaped line breaks inside strings. Do not wrap in markdown tags. Do not include any conversational text.
+
+EXAMPLE FORMAT:
 {{
-    "subject": "Email Subject Line Here",
-    "body": "Detailed email body text addressing the employee professionally..."
+    "subject": "Write a relevant subject line here based on the task",
+    "body": "Dear {employee.get('name')}, I am assigning you a new task regarding... (Write the full, professional email here)"
 }}
 """
     try:
