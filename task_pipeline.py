@@ -1,7 +1,10 @@
 import json
 import re
 import os
+from datetime import datetime, timezone, timedelta
 from langchain_groq import ChatGroq
+
+from tools.due_date_tool import validate_due_date
 
 llm = ChatGroq(
     model_name="llama-3.1-8b-instant",
@@ -21,55 +24,16 @@ def detect_dependencies(text):
 
 def detect_category(text):
     text = text.lower()
-
-    # AI/ML checked first so words like "agent" aren't stolen by Frontend
     categories = {
-        "AI/ML": [
-            "ai", "machine learning", "deep learning", "llm", "rag", 
-            "langchain", "embedding", "vector database", "faiss", 
-            "ollama", "qwen", "gemma", "huggingface", "tensorflow", 
-            "keras", "pytorch", "scikit-learn", "nlp", "computer vision", 
-            "prediction", "chatbot", "agent", "prompt engineering"
-        ],
-        "Backend": [
-            "backend", "api", "rest api", "fastapi", "flask", "django", 
-            "spring", "spring boot", "node", "express", "server", 
-            "microservice", "authentication", "login api", "signup api", 
-            "jwt", "redis", "bug", "crud", "endpoint"
-        ],
-         "PowerBI": [
-            "power bi", "powerbi", "dashboard", "report", "visualization",
-            "visual", "chart", "graph", "bar chart", "line chart", "pie chart",
-            "table", "matrix", "card", "kpi", "gauge", "slicer", "filter",
-            "drill down", "drillthrough", "tooltip", "bookmark",
-            "dax", "measure", "calculated column", "calculated table",
-            "power query", "m query", "query editor", "data transformation",
-            "etl", "data cleaning", "data model", "data modeling",
-            "relationship", "star schema", "snowflake schema",
-            "fact table", "dimension table",
-            "dataset", "data source", "excel", "csv", "sql",
-            "mysql", "postgresql", "sql server", "oracle",
-            "api", "sharepoint", "onedrive",
-            "refresh", "scheduled refresh", "gateway",
-            "workspace", "app", "publish", "power bi service",
-            "report server", "row level security", "rls",
-            "business intelligence", "bi", "analytics",
-            "sales dashboard", "finance dashboard",
-            "hr dashboard", "marketing dashboard",
-            "inventory dashboard", "performance dashboard"
-        ],
-        "Frontend": [
-            "frontend", "react", "angular", "vue", "nextjs", "html", 
-            "css", "bootstrap", "tailwind", "javascript", "typescript", 
-            "ui", "ux", "page", "screen", "component", "dashboard", 
-            "login page", "signup page", "landing page", "form"
-        ],
+        "AI/ML": ["ai", "machine learning", "deep learning", "llm", "rag", "langchain", "embedding", "vector database", "faiss", "ollama", "qwen", "gemma", "huggingface", "tensorflow", "keras", "pytorch", "scikit-learn", "nlp", "computer vision", "prediction", "chatbot", "agent", "prompt engineering"],
+        "Backend": ["backend", "api", "rest api", "fastapi", "flask", "django", "spring", "spring boot", "node", "express", "server", "microservice", "authentication", "login api", "signup api", "jwt", "redis", "bug", "crud", "endpoint"],
+        "PowerBI": ["power bi", "powerbi", "dashboard", "report", "visualization", "visual", "chart", "graph", "dax", "measure", "power query", "etl", "dataset", "data source", "sql"],
+        "Frontend": ["frontend", "react", "angular", "vue", "nextjs", "html", "css", "bootstrap", "tailwind", "javascript", "typescript", "ui", "ux", "page", "screen", "component", "dashboard", "login page", "signup page"],
         "DevOps": ["devops", "docker", "kubernetes", "terraform", "jenkins", "deployment", "deploy", "ci/cd", "pipeline"],
         "Database": ["database", "mongodb", "mysql", "postgresql", "sql", "query", "schema", "migration"],
         "QA": ["qa", "testing", "test case", "unit test", "automation", "selenium", "pytest"],
         "Cloud": ["cloud", "aws", "azure", "gcp", "lambda", "ec2", "s3"],
         "Security": ["security", "oauth", "encryption", "vulnerability"],
-        "Documentation": ["documentation", "readme", "report", "presentation", "wiki"],
         "Project Management": ["planning", "meeting", "scrum", "agile", "jira", "sprint"]
     }
     
@@ -77,12 +41,23 @@ def detect_category(text):
         for keyword in keywords:
             if keyword in text:
                 return category
-
     return "General"
 
 def extract_task(text):
+    # Get today's exact date in IST
+    ist_tz = timezone(timedelta(hours=5, minutes=30))
+    current_date = datetime.now(ist_tz).strftime('%Y-%m-%d')
+
     prompt = f"""
-You are an AI Task Extraction Assistant. Extract the main task from the following text. Return ONLY valid JSON containing:
+You are an AI Task Extraction Assistant. Extract the main task from the following text. 
+
+IMPORTANT DATE RULES:
+1. Today's date is {current_date}. 
+2. Format the "due_date" STRICTLY as YYYY-MM-DD.
+3. If the text mentions a day (e.g., "Tuesday"), calculate the exact YYYY-MM-DD for the upcoming Tuesday based on today's date.
+4. If no date is mentioned, default to today's date: {current_date}.
+
+Return ONLY valid JSON containing:
 {{
     "task_name": "",
     "priority": "",
@@ -93,6 +68,8 @@ You are an AI Task Extraction Assistant. Extract the main task from the followin
 Text: {text}
 """
     response = llm.invoke(prompt)
+    
+    # Clean the response to prevent basic markdown issues
     clean_response = response.content.replace("```json", "").replace("```", "").strip()
     
     try:
@@ -101,11 +78,15 @@ Text: {text}
         task = {
             "task_name": "Failed to parse",
             "priority": "Normal",
-            "due_date": "",
+            "due_date": current_date, # Fallback to today
             "description": "JSON parsing error.",
             "required_skills": []
         }
 
     task["category"] = detect_category(text)
     task["dependencies"] = detect_dependencies(text)
+    
+    # Run the validation
+    task["due_date_valid"] = validate_due_date(task["due_date"])
+    
     return task

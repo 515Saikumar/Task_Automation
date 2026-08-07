@@ -1,14 +1,9 @@
 import os
 import json
-import re
 import base64
 from email.mime.text import MIMEText
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -44,7 +39,6 @@ def authenticate_gmail():
 
 def generate_ai_email_content(employee, task, formatted_due_date):
     """Uses the LLM to draft a professional email subject and body."""
-    # (This is your exact existing LLM function)
     prompt = f"""
 You are an engineering manager's AI assistant. Draft a professional task assignment email body.
 IMPORTANT: Do NOT include any sign-off, closing, or signature (like "Best regards" or "[Your Name]") at the end of your body.
@@ -57,7 +51,7 @@ Category: {task.get('category', 'General')}
 Priority: {task.get('priority', 'Normal')}
 Due Date: {formatted_due_date}
 
-Return ONLY valid JSON with two keys: "subject" and "body". Do not use unescaped line breaks inside strings. Do not wrap in markdown tags.
+Return ONLY valid JSON with two keys: "subject" and "body". Do not use unescaped line breaks inside strings. Do not wrap in markdown tags. Do not include any conversational text.
 {{
     "subject": "Email Subject Line Here",
     "body": "Detailed email body text addressing the employee professionally..."
@@ -65,12 +59,17 @@ Return ONLY valid JSON with two keys: "subject" and "body". Do not use unescaped
 """
     try:
         response = llm.invoke(prompt)
-        clean_res = response.content.replace("```json", "").replace("```", "").strip()
-        try:
-            return json.loads(clean_res, strict=False)
-        except json.JSONDecodeError:
-            cleaned = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', clean_res)
-            return json.loads(cleaned, strict=False)
+        raw_text = response.content
+        
+        # Extract ONLY what is between the first { and the last }
+        start_idx = raw_text.find('{')
+        end_idx = raw_text.rfind('}')
+        
+        if start_idx != -1 and end_idx != -1:
+            clean_json_str = raw_text[start_idx:end_idx+1]
+            return json.loads(clean_json_str, strict=False)
+        else:
+            raise ValueError("No JSON object '{...}' found in the LLM response.")
             
     except Exception as e:
         print(f"⚠️ LLM failed to draft email, using fallback template: {e}")
@@ -80,21 +79,24 @@ Return ONLY valid JSON with two keys: "subject" and "body". Do not use unescaped
         }
 
 def send_task_email(employee, task):
-    """Generates the AI email and sends it via Gmail API instead of EmailJS."""
+    """Generates the AI email and sends it via Gmail API."""
     
     # 1. Handle Due Date fallback
     raw_due_date = task.get("due_date")
     if not raw_due_date or str(raw_due_date).strip().lower() in ["not specified", "none", "", "null", "n/a"]:
         formatted_due_date = "ASAP"
     else:
-        formatted_due_date = str(raw_due_date)
+        # If it's a datetime object, format it nicely. Otherwise, keep it as a string.
+        try:
+            formatted_due_date = raw_due_date.strftime("%b %d, %Y")
+        except AttributeError:
+            formatted_due_date = str(raw_due_date)
 
     # 2. Generate intelligent email content via LLM
     print("🤖 Generating AI-customized email content via LLM...")
     ai_email = generate_ai_email_content(employee, task, formatted_due_date)
 
     # 3. Create the HTML Template
-    # We inject the LLM's body into a nice HTML structure
     html_content = f"""
     <html>
       <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6;">
@@ -125,7 +127,6 @@ def send_task_email(employee, task):
 
         message = MIMEText(html_content, 'html')
         message['to'] = employee.get('email')
-        # Replace this with the email address you authenticate with
         message['from'] = "saikumarponnana515@gmail.com" 
         message['subject'] = ai_email.get('subject')
 
