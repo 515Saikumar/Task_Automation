@@ -278,9 +278,22 @@ function EmployeeDashboard({ token }) {
 
   const formatDueDate = (dateStr) => {
     if (!dateStr) return "Not Specified";
+    
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr; 
-    return d.toLocaleDateString();
+    
+    // If it is NOT a valid calendar date (e.g., the AI just output the word "tuesday" or "ASAP")
+    // This will capitalize the first letter so it looks nice!
+    if (isNaN(d.getTime())) {
+      return dateStr.charAt(0).toUpperCase() + dateStr.slice(1);
+    } 
+    
+    // If it IS a valid calendar date, format it to show the Day AND the Date!
+    return d.toLocaleDateString('en-US', {
+      weekday: 'long',   // Shows "Monday", "Tuesday", etc.
+      month: 'short',    // Shows "Jan", "Feb", "Aug", etc.
+      day: 'numeric',    // Shows "11", "12", etc.
+      year: 'numeric'    // Shows "2026"
+    });
   };
 
   return (
