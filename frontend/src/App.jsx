@@ -4,7 +4,7 @@ import './App.css';
 const API_BASE_URL = "http://localhost:10000";
 
 export default function App() {
-  const [view, setView] = useState('admin'); // 'admin' (public) or 'staff' (secure)
+  const [view, setView] = useState('admin'); 
   const [token, setToken] = useState(localStorage.getItem('token') || null);
   const [role, setRole] = useState(localStorage.getItem('role') || null);
   const [empId, setEmpId] = useState(localStorage.getItem('empId') || null);
@@ -28,7 +28,7 @@ export default function App() {
     setRole(null);
     setEmpId(null);
     localStorage.clear();
-    setView('admin'); // Kick back to public admin panel on logout
+    setView('admin'); 
   };
 
   return (
@@ -62,10 +62,8 @@ export default function App() {
 
       <main className="main-content">
         {token ? (
-          /* Logged In Views */
           role === 'qa' ? <QADashboard token={token} /> : <EmployeeDashboard token={token} />
         ) : (
-          /* Logged Out Views */
           view === 'admin' ? <AdminDashboard /> : <LoginView onLogin={handleLogin} />
         )}
       </main>
@@ -74,7 +72,7 @@ export default function App() {
 }
 
 // ==========================================
-// SECURE LOGIN COMPONENT (Staff Only)
+// SECURE LOGIN COMPONENT
 // ==========================================
 function LoginView({ onLogin }) {
   const [email, setEmail] = useState('');
@@ -109,20 +107,14 @@ function LoginView({ onLogin }) {
         
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <input 
-            type="email" 
-            placeholder="Email Address" 
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="file-input"
-            required
+            type="email" placeholder="Email Address" 
+            value={email} onChange={(e) => setEmail(e.target.value)}
+            className="file-input" required
           />
           <input 
-            type="text" 
-            placeholder="Employee ID (e.g. EMP001)" 
-            value={employeeId}
-            onChange={(e) => setEmployeeId(e.target.value)}
-            className="file-input"
-            required
+            type="text" placeholder="Employee ID (e.g. EMP001)" 
+            value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}
+            className="file-input" required
           />
           <button type="submit" className="btn btn-primary">Login</button>
         </form>
@@ -133,7 +125,7 @@ function LoginView({ onLogin }) {
 }
 
 // ==========================================
-// PUBLIC ADMIN DASHBOARD (Excel Upload)
+// PUBLIC ADMIN DASHBOARD
 // ==========================================
 function AdminDashboard() {
   const [file, setFile] = useState(null);
@@ -151,9 +143,7 @@ function AdminDashboard() {
     }
   };
 
-  useEffect(() => {
-    fetchTasksFiles();
-  }, []);
+  useEffect(() => { fetchTasksFiles(); }, []);
 
   const handleUpload = async (e) => {
     e.preventDefault();
@@ -194,14 +184,11 @@ function AdminDashboard() {
         <h3>Upload New Task Excel</h3>
         <form onSubmit={handleUpload} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <input 
-            type="file" 
-            accept=".xlsx, .xls" 
+            type="file" accept=".xlsx, .xls" 
             onChange={(e) => setFile(e.target.files[0])}
             className="file-input"
           />
-          <button type="submit" className="btn btn-upload">
-            Upload & Auto-Assign
-          </button>
+          <button type="submit" className="btn btn-upload">Upload & Auto-Assign</button>
         </form>
         {statusMsg && <p className="status-msg">{statusMsg}</p>}
       </div>
@@ -214,12 +201,7 @@ function AdminDashboard() {
           <div className="table-container">
             <table className="data-table">
               <thead>
-                <tr>
-                  <th>File ID</th>
-                  <th>Filename</th>
-                  <th>Status</th>
-                  <th>Uploaded At</th>
-                </tr>
+                <tr><th>File ID</th><th>Filename</th><th>Status</th><th>Uploaded At</th></tr>
               </thead>
               <tbody>
                 {tasksFiles.map((f) => (
@@ -260,14 +242,16 @@ function EmployeeDashboard({ token }) {
   useEffect(() => { fetchTasks(); }, []);
 
   const handleProgress = async (taskId) => {
+    if (!updateText[taskId]) return; 
+
     try {
       const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/progress`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ taskupdate: updateText[taskId] || "" })
+        body: JSON.stringify({ taskupdate: updateText[taskId] })
       });
       if (res.ok) {
-        alert("Progress updated!");
+        setUpdateText({ ...updateText, [taskId]: "" });
         fetchTasks();
       } else {
         const error = await res.json();
@@ -292,6 +276,13 @@ function EmployeeDashboard({ token }) {
     } catch (err) { alert("Failed to complete"); }
   };
 
+  const formatDueDate = (dateStr) => {
+    if (!dateStr) return "Not Specified";
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr; 
+    return d.toLocaleDateString();
+  };
+
   return (
     <div>
       <h2 className="dashboard-header">My Tasks</h2>
@@ -304,16 +295,41 @@ function EmployeeDashboard({ token }) {
                 {tasks.map(t => (
                   <tr key={t._id}>
                     <td>{t.task}</td>
-                    <td><span className="badge">{t.status}</span></td>
-                    <td>{new Date(t.duedate).toLocaleDateString()}</td>
-                    <td style={{ color: 'red', fontSize: '12px' }}>{t.remarks || 'None'}</td>
                     <td>
-                      {['Assigned', 'In Progress', 'Rework Required'].includes(t.status) && (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                      <span className="badge" style={{
+                        backgroundColor: t.status === 'In Progress' ? '#dcfce7' : '#fef08a',
+                        color: t.status === 'In Progress' ? '#166534' : '#854d0e'
+                      }}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td>{formatDueDate(t.duedate)}</td>
+                    <td>
+                      <div style={{ 
+                        color: '#b91c1c', fontSize: '12px', whiteSpace: 'pre-wrap', 
+                        maxHeight: '80px', overflowY: 'auto', width: '220px',
+                        backgroundColor: t.remarks ? '#fee2e2' : 'transparent',
+                        padding: t.remarks ? '6px' : '0', borderRadius: '4px'
+                      }}>
+                        {t.remarks || 'None'}
+                      </div>
+                    </td>
+                    <td>
+                      {['Assigned', 'In Progress', 'Rework Required'].includes(t.status) ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {t.taskupdate && (
+                            <div style={{ 
+                              fontSize: '12px', background: '#f9fafb', border: '1px solid #e5e7eb',
+                              padding: '6px', borderRadius: '4px', whiteSpace: 'pre-wrap', 
+                              maxHeight: '80px', overflowY: 'auto', width: '250px'
+                            }}>
+                              {t.taskupdate}
+                            </div>
+                          )}
                           <input 
-                            type="text" placeholder="Latest update..." 
-                            className="file-input" style={{ width: '200px' }}
-                            value={updateText[t._id] || t.taskupdate || ''}
+                            type="text" placeholder="Add new update..." 
+                            className="file-input" style={{ width: '250px' }}
+                            value={updateText[t._id] || ''}
                             onChange={(e) => setUpdateText({...updateText, [t._id]: e.target.value})}
                           />
                           <button onClick={() => handleProgress(t._id)} className="btn btn-upload" style={{ padding: '4px' }}>Save Progress</button>
@@ -321,6 +337,8 @@ function EmployeeDashboard({ token }) {
                              <button onClick={() => handleComplete(t._id)} className="btn btn-success" style={{ padding: '4px' }}>Mark Done (Send to QA)</button>
                           )}
                         </div>
+                      ) : (
+                        <div style={{ fontSize: '12px', whiteSpace: 'pre-wrap' }}>{t.taskupdate}</div>
                       )}
                     </td>
                   </tr>
@@ -371,31 +389,57 @@ function QADashboard({ token }) {
 
   return (
     <div>
-      <h2 className="dashboard-header">QA Review Queue</h2>
+      <h2 className="dashboard-header">QA Workspace & History</h2>
       <div className="card">
-        {tasks.length === 0 ? <p>No tasks pending review.</p> : (
+        {tasks.length === 0 ? <p>No tasks in the QA system.</p> : (
           <div className="table-container">
             <table className="data-table">
-              <thead><tr><th>EmpID</th><th>Task</th><th>Employee Update</th><th>Review Action</th></tr></thead>
+              <thead><tr><th>EmpID</th><th>Task</th><th>Status</th><th>Employee Update</th><th>Review Action / History</th></tr></thead>
               <tbody>
                 {tasks.map(t => (
                   <tr key={t._id}>
                     <td>{t.empid}</td>
                     <td>{t.task}</td>
-                    <td><em>{t.taskupdate || 'No update provided'}</em></td>
                     <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                        <input 
-                          type="text" placeholder="QA Feedback / Remarks" 
-                          className="file-input" style={{ width: '250px' }}
-                          value={remarks[t._id] || ''}
-                          onChange={(e) => setRemarks({...remarks, [t._id]: e.target.value})}
-                        />
-                        <div style={{ display: 'flex', gap: '10px' }}>
-                          <button onClick={() => handleReview(t._id, 'Approved')} className="btn btn-success" style={{ padding: '6px' }}>Approve</button>
-                          <button onClick={() => handleReview(t._id, 'Rework Required')} className="btn btn-danger" style={{ padding: '6px' }}>Reject (Rework)</button>
-                        </div>
+                      <span className="badge" style={{
+                        backgroundColor: t.status === 'Approved' ? '#dcfce7' : (t.status === 'Under QA Review' ? '#fef08a' : '#fee2e2'),
+                        color: t.status === 'Approved' ? '#166534' : (t.status === 'Under QA Review' ? '#854d0e' : '#b91c1c')
+                      }}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ 
+                         fontSize: '12px', background: '#f9fafb', border: '1px solid #e5e7eb',
+                         padding: '6px', borderRadius: '4px', whiteSpace: 'pre-wrap', 
+                         maxHeight: '120px', overflowY: 'auto', width: '250px'
+                      }}>
+                        {t.taskupdate || 'No update provided'}
                       </div>
+                    </td>
+                    <td>
+                      {t.status === 'Under QA Review' ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                          <textarea 
+                            placeholder="QA Feedback / Remarks" 
+                            className="file-input" style={{ width: '250px', height: '60px', resize: 'vertical' }}
+                            value={remarks[t._id] || ''}
+                            onChange={(e) => setRemarks({...remarks, [t._id]: e.target.value})}
+                          />
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <button onClick={() => handleReview(t._id, 'Approved')} className="btn btn-success" style={{ padding: '6px' }}>Approve</button>
+                            <button onClick={() => handleReview(t._id, 'Rework Required')} className="btn btn-danger" style={{ padding: '6px' }}>Reject (Rework)</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ 
+                          color: '#b91c1c', fontSize: '12px', whiteSpace: 'pre-wrap', 
+                          maxHeight: '120px', overflowY: 'auto', width: '250px',
+                          backgroundColor: '#fee2e2', padding: '6px', borderRadius: '4px'
+                        }}>
+                          {t.remarks}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

@@ -2,14 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from api.upload_api import router as upload_router
 from api.employee_api import router as employee_router
-from api.auth_api import router as auth_router
-from api.workflow_api import router as workflow_router  # <-- ADDED THIS
+from api.auth_api import router as auth_router      
+from api.workflow_api import router as workflow_router 
 
 import uvicorn
 
 app = FastAPI(title="AI Task Manager API")
 
-# Enable CORS so React frontend (port 5173) can talk to FastAPI (port 10000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,8 +19,8 @@ app.add_middleware(
 
 app.include_router(upload_router, prefix="/api")
 app.include_router(employee_router, prefix="/api")
-app.include_router(auth_router)
-app.include_router(workflow_router)  # <-- ADDED THIS
+app.include_router(auth_router)       
+app.include_router(workflow_router)   
 
 @app.get("/")
 def health_check():
