@@ -9,3 +9,4 @@ langchain-ollama
 langgraph
 langchain-groq
 python-multipart
+dateparser

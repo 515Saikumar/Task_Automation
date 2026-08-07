@@ -49,18 +49,12 @@ def extract_task(text):
     if not text or str(text).strip() == "":
         text = "Empty task description provided."
 
-    # Get today's exact date in IST
-    ist_tz = timezone(timedelta(hours=5, minutes=30))
-    current_date = datetime.now(ist_tz).strftime('%Y-%m-%d')
-
+    # Notice how much simpler the prompt is now! No more math rules.
     prompt = f"""
 You are an AI Task Extraction Assistant. Extract the main task from the following text. 
 
-IMPORTANT DATE RULES:
-1. Today's date is {current_date}. 
-2. Format the "due_date" STRICTLY as YYYY-MM-DD.
-3. If the text mentions a day (e.g., "Tuesday"), calculate the exact YYYY-MM-DD for the upcoming Tuesday based on today's date.
-4. If no date is mentioned, default to today's date: {current_date}.
+Extract the "due_date" EXACTLY as it is written in the text (e.g., "Monday", "tomorrow", "August 10"). 
+If no date is mentioned, leave "due_date" as an empty string "".
 
 Return ONLY valid JSON containing the following keys: "task_name", "priority", "due_date", "description", "required_skills".
 Do not include any conversational text.
@@ -86,23 +80,37 @@ JSON Output:
         
     except Exception as e:
         print(f"⚠️ Extraction Error: Using fallback task. Reason: {e}")
-        
-        # Use the original text as the task name (capped at 60 chars for the UI)
         raw_input_text = str(text).strip()
         fallback_title = raw_input_text[:60] + "..." if len(raw_input_text) > 60 else raw_input_text
-        
         task = {
             "task_name": fallback_title,
             "priority": "Normal",
-            "due_date": current_date, # Fallback to today
-            "description": raw_input_text, # Keep the full text in the description
+            "due_date": "", 
+            "description": raw_input_text, 
             "required_skills": []
         }
 
-    task["category"] = detect_category(text)
-    task["dependencies"] = detect_dependencies(text)
+    # --- THE MAGIC HAPPENS HERE ---
+    # 1. Grab whatever the AI found (e.g., "Monday", or "")
+    raw_date = task.get("due_date", "")
     
-    # Run the validation
-    task["due_date_valid"] = validate_due_date(task["due_date"])
+    # 2. If it's empty, default it to today's date in IST
+    if not raw_date:
+        ist_tz = timezone(timedelta(hours=5, minutes=30))
+        raw_date = datetime.now(ist_tz).strftime('%Y-%m-%d')
+
+    # 3. Pass it to your powerful dateparser tool
+    date_info = validate_due_date(raw_date)
+    
+    # 4. Save the PERFECT date and the validation check back into the task dictionary
+    task["due_date"] = date_info["clean_date"]
+    task["due_date_valid"] = date_info["is_valid"]
+    # ------------------------------
+
+    # Run category detection on the AI's CLEANED text
+    search_text = f"{text} {task.get('task_name', '')} {task.get('description', '')}"
+    
+    task["category"] = detect_category(search_text)
+    task["dependencies"] = detect_dependencies(search_text)
     
     return task
