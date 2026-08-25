@@ -2,4 +2,7 @@
 credentials.json
 token.json
 __pycache__/
-node_modules/
+node_modules/.
+.venv/
+venv/
+__pycache__/

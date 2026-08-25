@@ -201,3 +201,64 @@ body {
   font-size: 0.75rem;
   font-weight: 700;
 }
+
+/* ==========================================
+   NEW: AI CHATBOT STYLES
+   ========================================== */
+
+/* Hover effects for the floating chat toggle button */
+.chatbot-toggle-btn {
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+.chatbot-toggle-btn:hover {
+  transform: scale(1.08) !important;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4) !important;
+}
+
+/* Opening animation for the chat window */
+.chat-window-container {
+  animation: slideUpFade 0.3s ease-out forwards;
+}
+
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom modern scrollbar for the messages area */
+.chat-messages-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 10px;
+}
+
+.chat-messages-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+/* Blinking dot typing animation for the AI loading state */
+.typing-dots::after {
+  content: '';
+  animation: typing 1.5s infinite linear;
+}
+
+@keyframes typing {
+  0% { content: '.'; }
+  33% { content: '..'; }
+  66% { content: '...'; }
+  100% { content: ''; }
+}

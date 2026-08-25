@@ -3,6 +3,17 @@ import sys
 from dotenv import load_dotenv
 from datetime import datetime, timezone 
 
+# --- NEW: Imports for FastAPI & AI Chatbot ---
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import json
+from langchain_openai import ChatOpenAI
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tools import tool
+# ---------------------------------------------
+
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
@@ -11,11 +22,90 @@ load_dotenv()
 
 import io
 import pandas as pd
+import pymongo # Moved to top level for AI tool access if needed
 
 from agent.graph import graph
 from database.mongodb import tasks_collection, workprogress_collection
 from bson import ObjectId
 from tools.email_tool import send_task_email
+
+# ==========================================
+# NEW: AI Chatbot Tool & Agent Configuration
+# ==========================================
+
+@tool
+def query_workprogress(search_term: str) -> str:
+    """
+    Queries employee work progress from MongoDB. 
+    Input should be a search term like an employee's ID, task name, or status.
+    """
+    try:
+        query = {
+            "$or": [
+                {"empid": {"$regex": search_term, "$options": "i"}},
+                {"task": {"$regex": search_term, "$options": "i"}},
+                {"status": {"$regex": search_term, "$options": "i"}}
+            ]
+        }
+        
+        # Exclude ObjectId for clean JSON parsing
+        results = list(workprogress_collection.find(query, {"_id": 0}))
+        
+        if not results:
+            return f"No work progress found for '{search_term}'."
+            
+        # Convert datetime objects to strings before JSON serialization
+        for doc in results:
+            for key, value in doc.items():
+                if isinstance(value, datetime):
+                    doc[key] = value.isoformat()
+                    
+        return json.dumps(results)
+    except Exception as e:
+        return f"Error querying database: {str(e)}"
+
+# Initialize the LangChain Agent
+llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+tools = [query_workprogress]
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful HR and Project Management assistant. Use the provided tools to fetch employee work progress from the database and answer user queries clearly and concisely."),
+    ("human", "{input}"),
+    ("placeholder", "{agent_scratchpad}"),
+])
+
+agent = create_tool_calling_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# ==========================================
+# NEW: FastAPI Application Setup
+# ==========================================
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class ChatRequest(BaseModel):
+    message: str
+
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRequest):
+    try:
+        response = agent_executor.invoke({"input": request.message})
+        return {"response": response["output"]}
+    except Exception as e:
+        return {"response": f"Sorry, I encountered an error: {str(e)}"}
+
+
+# ==========================================
+# EXISTING: Excel Processing Logic
+# ==========================================
 
 def process_excel(file_id: str):
     document = tasks_collection.find_one({"_id": ObjectId(file_id)})
@@ -92,8 +182,7 @@ def process_excel(file_id: str):
 
 
 if __name__ == "__main__":
-    import pymongo
-    
+    # If run directly as a script (e.g., python main.py), it will execute the manual pipeline
     print("Fetching the most recently uploaded Excel file from MongoDB...")
     latest_document = tasks_collection.find_one({}, sort=[("_id", pymongo.DESCENDING)])
     
@@ -102,3 +191,6 @@ if __name__ == "__main__":
         process_excel(str(latest_document["_id"]))
     else:
         print("No Excel files found.")
+        
+    # NOTE: To run the FastAPI server, use the terminal command:
+    # uvicorn main:app --reload

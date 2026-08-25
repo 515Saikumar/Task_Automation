@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css'; 
 
 const API_BASE_URL = "http://localhost:10000";
@@ -67,6 +67,9 @@ export default function App() {
           view === 'admin' ? <AdminDashboard /> : <LoginView onLogin={handleLogin} />
         )}
       </main>
+
+      {/* NEW: Floating AI Chatbot Widget */}
+      <AIChatbot />
     </div>
   );
 }
@@ -462,5 +465,155 @@ function QADashboard({ token }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ==========================================
+// NEW: FLOATING AI CHATBOT COMPONENT
+// ==========================================
+function AIChatbot() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    { role: 'ai', text: 'Hello! Ask me about employee work progress.' }
+  ]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isOpen]);
+
+  const handleSend = async () => {
+    if (!input.trim()) return;
+
+    const userMessage = { role: 'user', text: input };
+    setMessages((prev) => [...prev, userMessage]);
+    setInput('');
+    setIsLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMessage.text })
+      });
+      
+      const data = await res.json();
+      setMessages((prev) => [...prev, { role: 'ai', text: data.response }]);
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev, 
+        { role: 'ai', text: 'Error connecting to the AI backend. Is it running?' }
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Chatbot Toggle Button */}
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          position: 'fixed', bottom: '30px', right: '30px',
+          backgroundColor: '#2563eb', color: 'white', border: 'none',
+          borderRadius: '50%', width: '60px', height: '60px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)', cursor: 'pointer',
+          fontSize: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1000, transition: 'transform 0.2s'
+        }}
+        title="Chat with AI"
+      >
+        {isOpen ? '✕' : '💬'}
+      </button>
+
+      {/* Chatbot Window */}
+      {isOpen && (
+        <div style={{
+          position: 'fixed', bottom: '100px', right: '30px',
+          width: '350px', height: '500px', backgroundColor: 'white',
+          borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+          display: 'flex', flexDirection: 'column', zIndex: 1000,
+          border: '1px solid #e2e8f0', overflow: 'hidden'
+        }}>
+          {/* Header */}
+          <div style={{
+            backgroundColor: '#2563eb', color: 'white', padding: '15px',
+            fontWeight: 'bold', display: 'flex', justifyContent: 'space-between'
+          }}>
+            <span>AI Progress Assistant</span>
+          </div>
+
+          {/* Messages Area */}
+          <div style={{
+            flex: 1, padding: '15px', overflowY: 'auto',
+            display: 'flex', flexDirection: 'column', gap: '10px',
+            backgroundColor: '#f8fafc'
+          }}>
+            {messages.map((msg, index) => (
+              <div key={index} style={{
+                display: 'flex', width: '100%',
+                justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
+              }}>
+                <div style={{
+                  maxWidth: '80%', padding: '10px 14px', borderRadius: '15px',
+                  fontSize: '14px', lineHeight: '1.4',
+                  backgroundColor: msg.role === 'user' ? '#2563eb' : '#e2e8f0',
+                  color: msg.role === 'user' ? 'white' : '#1e293b',
+                  borderBottomRightRadius: msg.role === 'user' ? '4px' : '15px',
+                  borderBottomLeftRadius: msg.role === 'ai' ? '4px' : '15px'
+                }}>
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+            {isLoading && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <div style={{
+                  padding: '10px 14px', borderRadius: '15px', fontSize: '14px',
+                  backgroundColor: '#e2e8f0', color: '#64748b', fontStyle: 'italic',
+                  borderBottomLeftRadius: '4px'
+                }}>
+                  AI is thinking...
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Input Area */}
+          <div style={{
+            padding: '15px', borderTop: '1px solid #e2e8f0',
+            display: 'flex', gap: '10px', backgroundColor: 'white'
+          }}>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+              placeholder="Ask about task status..."
+              style={{
+                flex: 1, padding: '10px', borderRadius: '8px',
+                border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px'
+              }}
+            />
+            <button 
+              onClick={handleSend} disabled={isLoading}
+              style={{
+                backgroundColor: '#2563eb', color: 'white', border: 'none',
+                padding: '0 15px', borderRadius: '8px', cursor: 'pointer',
+                fontWeight: 'bold', opacity: isLoading ? 0.7 : 1
+              }}
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
