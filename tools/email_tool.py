@@ -16,11 +16,11 @@ SCOPES = ['https://www.googleapis.com/auth/gmail.send']
 
 # Initialize LLM for drafting the email content
 llm = ChatGroq(
-    model_name="llama-3.1-8b-instant",
-    temperature=0.3,
-    max_tokens=300,
+    model_name="openai/gpt-oss-20b",
+    temperature=0,
+    max_tokens=1000,
     groq_api_key=os.getenv("GROQ_API_KEY")
-)
+).bind(response_format={"type": "json_object"})
 
 def authenticate_gmail():
     """Authenticates the user with the Gmail API."""
@@ -52,12 +52,11 @@ Category: {task.get('category', 'General')}
 Priority: {task.get('priority', 'Normal')}
 Due Date: {formatted_due_date}
 
-Return ONLY valid JSON with two keys: "subject" and "body". Do not use unescaped line breaks inside strings. Do not wrap in markdown tags. Do not include any conversational text.
+You MUST output your response strictly as a JSON object with two keys: "subject" and "body". Do not wrap it in markdown block quotes.
 
-EXAMPLE FORMAT:
 {{
-    "subject": "Write a relevant subject line here based on the task",
-    "body": "Dear {employee.get('name')}, I am assigning you a new task regarding... (Write the full, professional email here)"
+    "subject": "Relevant subject line here",
+    "body": "Dear {employee.get('name')}, I am assigning you a new task regarding... (Write the full email here)"
 }}
 """
     try:

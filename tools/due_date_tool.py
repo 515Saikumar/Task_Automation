@@ -11,8 +11,8 @@ load_dotenv()
 # ==========================================
 def get_sprint_dates():
     """Fetches the active sprint dates dynamically from the .env file."""
-    start_str = os.getenv("SPRINT_START", "2026-08-10")
-    end_str = os.getenv("SPRINT_END", "2026-08-24")
+    start_str = os.getenv("SPRINT_START", "2026-08-24")
+    end_str = os.getenv("SPRINT_END", "2026-09-10")
     
     try:
         sprint_start = datetime.strptime(start_str, "%Y-%m-%d").date()

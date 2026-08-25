@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, HTTPException
 from repository.excel_repository import ExcelRepository
-from database.mongodb import tasks_collection
+from database.mongodb import tasks_collection, workprogress_collection
 from main import process_excel
 
 router = APIRouter(tags=["Excel Upload"])
@@ -35,3 +35,30 @@ def delete_excel_file(file_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="File not found")
     return {"success": True, "message": "File deleted successfully"}
+
+@router.get("/admin/tasks-overview")
+def get_admin_tasks_overview():
+    tasks = list(workprogress_collection.find().sort("createdAt", -1))
+    for t in tasks:
+        t["_id"] = str(t["_id"])
+    
+    total_tasks = len(tasks)
+    completed_tasks = sum(1 for t in tasks if t.get("status") == "Approved" or t.get("status") == "Done")
+    ongoing_tasks = total_tasks - completed_tasks
+    
+    return {
+        "total_tasks": total_tasks,
+        "completed_tasks": completed_tasks,
+        "ongoing_tasks": ongoing_tasks,
+        "tasks": tasks
+    }
+
+@router.get("/admin/groq-models")
+def get_groq_models():
+    import os
+    import requests
+    from dotenv import load_dotenv
+    load_dotenv()
+    headers={'Authorization': f'Bearer {os.getenv("GROQ_API_KEY")}'}
+    res = requests.get('https://api.groq.com/openai/v1/models', headers=headers)
+    return res.json()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from bson import ObjectId
 from datetime import datetime, timezone, timedelta
-from database.mongodb import workprogress_collection
+from database.mongodb import workprogress_collection, emp_collection
 from auth.security import get_current_user, RequireRole
 from pydantic import BaseModel
 
@@ -60,11 +60,29 @@ def complete_task(task_id: str, user: dict = Depends(get_current_user)):
     if not task: raise HTTPException(404, "Task not found")
     if task["empid"] != user["empid"]: raise HTTPException(403, "You do not own this task")
     
+    # Find an available QA engineer (preferably one with the least active tasks)
+    qa_emp = emp_collection.find_one(
+        {"primary_category": "QA"}, 
+        sort=[("active_tasks", 1)]
+    )
+    
+    qa_name = qa_emp["name"] if qa_emp else "QA Team"
+    qa_id = qa_emp["employee_id"] if qa_emp else "UNASSIGNED"
+
     workprogress_collection.update_one(
         {"_id": ObjectId(task_id)},
-        {"$set": {"status": "Under QA Review", "updatedAt": datetime.now(timezone.utc)}}
+        {"$set": {
+            "status": "Under QA Review", 
+            "assigned_qa": qa_id,
+            "qa_name": qa_name,
+            "updatedAt": datetime.now(timezone.utc)
+        }}
     )
-    return {"message": "Task completed and sent to QA"}
+    
+    # If we assigned a QA, we could increment their active_tasks here if desired, 
+    # but for now, just tagging them is enough to notify the employee.
+    
+    return {"message": f"Task completed and sent to {qa_name} for QA review."}
 
 # ==========================================
 # 4. GET QA QUEUE (QA Only)
@@ -110,4 +128,29 @@ def review_task(task_id: str, review: TaskQAReview, user: dict = Depends(get_cur
         {"_id": ObjectId(task_id)},
         {"$set": {"status": new_status, "remarks": combined_remarks, "updatedAt": datetime.now(timezone.utc)}}
     )
+    
+    if new_status == "Approved":
+        emp = emp_collection.find_one({"employee_id": task["empid"]})
+        if emp:
+            new_active = max(0, emp.get("active_tasks", 1) - 1)
+            max_tasks = emp.get("max_tasks", 4)
+            new_availability = new_active < max_tasks
+            
+            emp_collection.update_one(
+                {"employee_id": task["empid"]},
+                {"$set": {
+                    "active_tasks": new_active,
+                    "availability": new_availability
+                }}
+            )
+    elif review.status == "Rework Required":
+        # Initialize at 100 if missing, and decrease by 2 for the rework remark
+        emp = emp_collection.find_one({"employee_id": task["empid"]})
+        if emp:
+            current_score = emp.get("performance_score", 100)
+            emp_collection.update_one(
+                {"employee_id": task["empid"]},
+                {"$set": {"performance_score": current_score - 2}}
+            )
+
     return {"message": f"Task review complete. Status: {new_status}"}

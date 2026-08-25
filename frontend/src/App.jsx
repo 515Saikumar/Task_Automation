@@ -131,8 +131,11 @@ function LoginView({ onLogin }) {
 // PUBLIC ADMIN DASHBOARD
 // ==========================================
 function AdminDashboard() {
+  const [adminTab, setAdminTab] = useState('overview'); // 'overview' or 'upload'
+  const [taskFilter, setTaskFilter] = useState('all'); // 'all', 'ongoing', 'completed'
   const [file, setFile] = useState(null);
   const [tasksFiles, setTasksFiles] = useState([]);
+  const [taskOverview, setTaskOverview] = useState({ total_tasks: 0, completed_tasks: 0, ongoing_tasks: 0, tasks: [] });
   const [statusMsg, setStatusMsg] = useState("");
 
   const fetchTasksFiles = async () => {
@@ -146,7 +149,20 @@ function AdminDashboard() {
     }
   };
 
-  useEffect(() => { fetchTasksFiles(); }, []);
+  const fetchTaskOverview = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/tasks-overview`);
+      const data = await response.json();
+      setTaskOverview(data);
+    } catch (error) {
+      console.error("Failed to fetch task overview:", error);
+    }
+  };
+
+  useEffect(() => { 
+    fetchTasksFiles(); 
+    fetchTaskOverview();
+  }, []);
 
   const handleUpload = async (e) => {
     e.preventDefault();
@@ -170,6 +186,7 @@ function AdminDashboard() {
         setStatusMsg("✅ Upload successful! AI is processing in the background.");
         setFile(null);
         fetchTasksFiles(); 
+        fetchTaskOverview();
       } else {
         setStatusMsg("❌ Upload failed.");
       }
@@ -183,45 +200,119 @@ function AdminDashboard() {
       <h2 className="dashboard-header">Public Admin Panel</h2>
       <p style={{marginBottom: "20px", color: "#4b5563"}}>Upload task lists here. The AI will automatically parse the Excel file, assign tasks to employees in MongoDB, and email them.</p>
       
-      <div className="card">
-        <h3>Upload New Task Excel</h3>
-        <form onSubmit={handleUpload} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <input 
-            type="file" accept=".xlsx, .xls" 
-            onChange={(e) => setFile(e.target.files[0])}
-            className="file-input"
-          />
-          <button type="submit" className="btn btn-upload">Upload & Auto-Assign</button>
-        </form>
-        {statusMsg && <p className="status-msg">{statusMsg}</p>}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+        <button onClick={() => setAdminTab('overview')} className={adminTab === 'overview' ? 'tab-active' : 'tab-inactive'}>Global Task Overview</button>
+        <button onClick={() => setAdminTab('upload')} className={adminTab === 'upload' ? 'tab-active' : 'tab-inactive'}>Upload & Files</button>
       </div>
 
-      <div className="card">
-        <h3>Recent Excel Task Files</h3>
-        {tasksFiles.length === 0 ? (
-          <p style={{ color: '#6b7280' }}>No task files uploaded yet.</p>
-        ) : (
-          <div className="table-container">
-            <table className="data-table">
-              <thead>
-                <tr><th>File ID</th><th>Filename</th><th>Status</th><th>Uploaded At</th></tr>
-              </thead>
-              <tbody>
-                {tasksFiles.map((f) => (
-                  <tr key={f._id}>
-                    <td style={{ fontSize: '0.875rem', color: '#6b7280' }}>{f._id}</td>
-                    <td style={{ fontWeight: '500' }}>{f.filename}</td>
-                    <td><span className="badge">{f.status}</span></td>
-                    <td style={{ fontSize: '0.875rem', color: '#4b5563' }}>
-                      {new Date(f.uploaded_at).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {adminTab === 'upload' && (
+        <>
+          <div className="card">
+            <h3>Upload New Task Excel</h3>
+            <form onSubmit={handleUpload} style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <input 
+                type="file" accept=".xlsx, .xls" 
+                onChange={(e) => setFile(e.target.files[0])}
+                className="file-input"
+              />
+              <button type="submit" className="btn btn-upload">Upload & Auto-Assign</button>
+            </form>
+            {statusMsg && <p className="status-msg">{statusMsg}</p>}
           </div>
-        )}
-      </div>
+
+          <div className="card">
+            <h3>Recent Excel Task Files</h3>
+            {tasksFiles.length === 0 ? (
+              <p style={{ color: '#6b7280' }}>No task files uploaded yet.</p>
+            ) : (
+              <div className="table-container">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>File ID</th><th>Filename</th><th>Status</th><th>Uploaded At</th></tr>
+                  </thead>
+                  <tbody>
+                    {tasksFiles.map((f) => (
+                      <tr key={f._id}>
+                        <td style={{ fontSize: '0.875rem', color: '#6b7280' }}>{f._id}</td>
+                        <td style={{ fontWeight: '500' }}>{f.filename}</td>
+                        <td><span className="badge">{f.status}</span></td>
+                        <td style={{ fontSize: '0.875rem', color: '#4b5563' }}>
+                          {new Date(f.uploaded_at).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {adminTab === 'overview' && (
+        <div className="card">
+          <h3>Global Task Overview</h3>
+          <p style={{marginBottom: '15px', color: '#6b7280', fontSize: '14px'}}>Click on a card below to filter the table.</p>
+          <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
+            <div 
+              onClick={() => setTaskFilter('all')}
+              style={{ flex: 1, backgroundColor: '#eff6ff', padding: '20px', borderRadius: '8px', textAlign: 'center', border: '1px solid #bfdbfe', cursor: 'pointer', opacity: taskFilter === 'all' ? 1 : 0.6, transform: taskFilter === 'all' ? 'scale(1.02)' : 'scale(1)', transition: 'all 0.2s' }}>
+              <h4 style={{ margin: 0, color: '#1e40af', fontSize: '1.2rem' }}>Total Tasks Processed</h4>
+              <p style={{ margin: '10px 0 0', fontSize: '2.5rem', fontWeight: 'bold', color: '#1d4ed8' }}>{taskOverview.total_tasks}</p>
+            </div>
+            <div 
+              onClick={() => setTaskFilter('ongoing')}
+              style={{ flex: 1, backgroundColor: '#fffbeb', padding: '20px', borderRadius: '8px', textAlign: 'center', border: '1px solid #fde68a', cursor: 'pointer', opacity: taskFilter === 'ongoing' ? 1 : 0.6, transform: taskFilter === 'ongoing' ? 'scale(1.02)' : 'scale(1)', transition: 'all 0.2s' }}>
+              <h4 style={{ margin: 0, color: '#b45309', fontSize: '1.2rem' }}>Ongoing Tasks</h4>
+              <p style={{ margin: '10px 0 0', fontSize: '2.5rem', fontWeight: 'bold', color: '#d97706' }}>{taskOverview.ongoing_tasks}</p>
+            </div>
+            <div 
+              onClick={() => setTaskFilter('completed')}
+              style={{ flex: 1, backgroundColor: '#f0fdf4', padding: '20px', borderRadius: '8px', textAlign: 'center', border: '1px solid #bbf7d0', cursor: 'pointer', opacity: taskFilter === 'completed' ? 1 : 0.6, transform: taskFilter === 'completed' ? 'scale(1.02)' : 'scale(1)', transition: 'all 0.2s' }}>
+              <h4 style={{ margin: 0, color: '#166534', fontSize: '1.2rem' }}>Tasks Completed</h4>
+              <p style={{ margin: '10px 0 0', fontSize: '2.5rem', fontWeight: 'bold', color: '#15803d' }}>{taskOverview.completed_tasks}</p>
+            </div>
+          </div>
+
+          {taskOverview.tasks.length === 0 ? (
+            <p style={{ color: '#6b7280' }}>No tasks found in the database.</p>
+          ) : (
+            <div className="table-container">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Task Name</th>
+                    <th>Assigned To</th>
+                    <th>QA Reviewer</th>
+                    <th>Status</th>
+                    <th>Due Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {taskOverview.tasks.filter(t => {
+                    if (taskFilter === 'all') return true;
+                    const isCompleted = t.status === "Approved" || t.status === "Done";
+                    if (taskFilter === 'completed') return isCompleted;
+                    if (taskFilter === 'ongoing') return !isCompleted;
+                    return true;
+                  }).map((t) => (
+                    <tr key={t._id}>
+                      <td style={{ fontWeight: '500' }}>{t.task}</td>
+                      <td>{t.empname || t.empid}</td>
+                      <td>{t.qa_name || "-"}</td>
+                      <td><span className="badge">{t.status}</span></td>
+                      <td style={{ fontSize: '0.875rem', color: '#4b5563' }}>
+                        {new Date(t.duedate).toLocaleDateString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
@@ -306,7 +397,7 @@ function EmployeeDashboard({ token }) {
         {tasks.length === 0 ? <p>No tasks assigned yet.</p> : (
           <div className="table-container">
             <table className="data-table">
-              <thead><tr><th>Task</th><th>Status</th><th>Due Date</th><th>QA Remarks</th><th>Action</th></tr></thead>
+              <thead><tr><th>Task</th><th>Status</th><th>Due Date</th><th>QA Reviewer</th><th>QA Remarks</th><th>Action</th></tr></thead>
               <tbody>
                 {tasks.map(t => (
                   <tr key={t._id}>
@@ -320,6 +411,7 @@ function EmployeeDashboard({ token }) {
                       </span>
                     </td>
                     <td>{formatDueDate(t.duedate)}</td>
+                    <td style={{ fontSize: '0.875rem', color: '#4b5563', fontWeight: '500' }}>{t.qa_name || <span style={{color: '#9ca3af', fontStyle: 'italic'}}>Pending...</span>}</td>
                     <td>
                       <div style={{ 
                         color: '#b91c1c', fontSize: '12px', whiteSpace: 'pre-wrap', 
@@ -565,7 +657,8 @@ function AIChatbot() {
                   backgroundColor: msg.role === 'user' ? '#2563eb' : '#e2e8f0',
                   color: msg.role === 'user' ? 'white' : '#1e293b',
                   borderBottomRightRadius: msg.role === 'user' ? '4px' : '15px',
-                  borderBottomLeftRadius: msg.role === 'ai' ? '4px' : '15px'
+                  borderBottomLeftRadius: msg.role === 'ai' ? '4px' : '15px',
+                  whiteSpace: 'pre-wrap'
                 }}>
                   {msg.text}
                 </div>

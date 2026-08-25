@@ -19,7 +19,26 @@ from pydantic import BaseModel
 # LangChain imports
 # -----------------------------
 from langchain_groq import ChatGroq
-from langchain.agents import AgentExecutor, create_tool_calling_agent
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+try:
+    from langchain.agents import AgentExecutor, create_tool_calling_agent
+except ImportError:
+    try:
+        from langchain.agents.agent import AgentExecutor
+        from langchain.agents.tool_calling_agent.base import create_tool_calling_agent
+    except ImportError:
+        try:
+            from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+        except ImportError as e:
+            raise ImportError(
+                "Could not import AgentExecutor. In newer LangChain versions, "
+                "AgentExecutor is moved. Please run `pip install langchain-classic` "
+                "or install an older version of LangChain."
+            ) from e
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 
@@ -208,13 +227,35 @@ def query_workprogress(search_term: str) -> str:
         )
 
 
+@tool
+def get_all_workprogress() -> str:
+    """
+    Returns ALL employee work progress records. Use this tool when the user asks for:
+    - Tasks on a specific date (like 'today' or 'yesterday')
+    - All completed tasks
+    - A general summary of all tasks
+    
+    You can then filter the returned JSON array yourself to find tasks matching the specific date or status requested by the user.
+    """
+    try:
+        from datetime import datetime
+        results = list(workprogress_collection.find({}, {"_id": 0}))
+        for doc in results:
+            for key, value in doc.items():
+                if isinstance(value, datetime):
+                    doc[key] = value.isoformat()
+        return json.dumps(results, default=str)
+    except Exception as e:
+        return f"Error querying database: {str(e)}"
+
 # ============================================================
 # INITIALIZE OPENAI LLM
 # ============================================================
 
 llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0
+    model_name="openai/gpt-oss-20b",
+    temperature=0,
+    groq_api_key=os.getenv("GROQ_API_KEY")
 )
 
 # ============================================================
@@ -222,7 +263,8 @@ llm = ChatGroq(
 # ============================================================
 
 tools = [
-    query_workprogress
+    query_workprogress,
+    get_all_workprogress
 ]
 
 
@@ -240,19 +282,28 @@ You are a helpful HR and Project Management assistant.
 You can access employee work progress information
 from the MongoDB database using the provided tools.
 
+When the user asks about specific names or IDs:
+use the `query_workprogress` tool.
+
 When the user asks about:
+- Tasks completed "today" or on a specific date
+- All completed/pending tasks in general
+- A summary of all tasks
+use the `get_all_workprogress` tool and filter the returned JSON list yourself to find the exact matches (e.g. checking the 'status' and date fields like 'uploaded_at').
 
-- Employee work progress
-- Employee ID
-- Tasks
-- Task status
-- Completed tasks
-- Pending tasks
-- Employee activity
-
-use the database tool to retrieve the relevant information.
+Note: Tasks are usually considered completed if their status is 'Done' or 'Approved'.
 
 Answer the user clearly and concisely.
+
+CRITICAL FORMATTING INSTRUCTIONS:
+When listing tasks or returning multiple pieces of information, YOU MUST use clean Markdown formatting to make it easy to read. 
+Format EACH task distinctly like this:
+- **Employee:** [Employee Name] ([ID])
+- **Task:** [Task Description]
+- **Status:** [Status]
+- **Date:** [Date]
+
+NEVER output everything in a single dense paragraph. Always use line breaks and bullet points.
 
 Do not invent employee information.
 

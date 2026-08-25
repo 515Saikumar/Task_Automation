@@ -170,6 +170,9 @@ body {
 /* --- Data Table --- */
 .table-container {
   overflow-x: auto;
+  max-height: 450px;
+  overflow-y: auto;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .data-table {
@@ -200,6 +203,33 @@ body {
   border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 700;
+}
+
+/* --- Tabs --- */
+.tab-active {
+  background-color: #2563eb;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-inactive {
+  background-color: #e5e7eb;
+  color: #4b5563;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-inactive:hover {
+  background-color: #d1d5db;
 }
 
 /* ==========================================

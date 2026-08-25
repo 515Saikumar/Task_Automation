@@ -9,7 +9,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 from langchain_openai import ChatOpenAI
-from langchain.agents import AgentExecutor, create_tool_calling_agent
+try:
+    from langchain.agents import AgentExecutor, create_tool_calling_agent
+except ImportError:
+    try:
+        from langchain.agents.agent import AgentExecutor
+        from langchain.agents.tool_calling_agent.base import create_tool_calling_agent
+    except ImportError:
+        try:
+            from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+        except ImportError as e:
+            raise ImportError(
+                "Could not import AgentExecutor. In newer LangChain versions, "
+                "AgentExecutor is moved. Please run `pip install langchain-classic` "
+                "or install an older version of LangChain."
+            ) from e
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 # ---------------------------------------------
@@ -25,7 +39,7 @@ import pandas as pd
 import pymongo # Moved to top level for AI tool access if needed
 
 from agent.graph import graph
-from database.mongodb import tasks_collection, workprogress_collection
+from database.mongodb import tasks_collection, workprogress_collection, emp_collection
 from bson import ObjectId
 from tools.email_tool import send_task_email
 
@@ -167,6 +181,7 @@ def process_excel(file_id: str):
         else:
             workprogress_doc = {
                 "empid": employee['employee_id'],
+                "empname": employee['name'],
                 "task": task['task_name'],
                 "duedate": due_date_val,
                 "taskupdate": "",
@@ -176,7 +191,21 @@ def process_excel(file_id: str):
                 "updatedAt": datetime.now(timezone.utc)  
             }
             workprogress_collection.insert_one(workprogress_doc)
-            print("✅ Task successfully added to workprogress!")
+            
+            emp = emp_collection.find_one({"employee_id": employee['employee_id']})
+            if emp:
+                new_active = emp.get("active_tasks", 0) + 1
+                max_tasks = emp.get("max_tasks", 4)
+                new_availability = new_active < max_tasks
+                
+                emp_collection.update_one(
+                    {"employee_id": employee['employee_id']},
+                    {"$set": {
+                        "active_tasks": new_active,
+                        "availability": new_availability
+                    }}
+                )
+            print("✅ Task successfully added to workprogress and employee active_tasks updated!")
 
         print("\n")
 
