@@ -296,12 +296,13 @@ Note: Tasks are usually considered completed if their status is 'Done' or 'Appro
 Answer the user clearly and concisely.
 
 CRITICAL FORMATTING INSTRUCTIONS:
-When listing tasks or returning multiple pieces of information, YOU MUST use clean Markdown formatting to make it easy to read. 
+When listing tasks or returning multiple pieces of information, YOU MUST use clean, plain text bullet points. DO NOT use Markdown bolding (asterisks) like **Employee:** because the chat window cannot render them.
+
 Format EACH task distinctly like this:
-- **Employee:** [Employee Name] ([ID])
-- **Task:** [Task Description]
-- **Status:** [Status]
-- **Date:** [Date]
+- Employee: [Employee Name] ([ID])
+- Task: [Task Description]
+- Status: [Status]
+- Date: [Date]
 
 NEVER output everything in a single dense paragraph. Always use line breaks and bullet points.
 
