@@ -322,7 +322,9 @@ function AdminDashboard() {
 // ==========================================
 function EmployeeDashboard({ token }) {
   const [tasks, setTasks] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [updateText, setUpdateText] = useState({}); 
+  const [reassignId, setReassignId] = useState({}); 
 
   const fetchTasks = async () => {
     try {
@@ -333,7 +335,17 @@ function EmployeeDashboard({ token }) {
     } catch (err) { console.error(err); }
   };
 
-  useEffect(() => { fetchTasks(); }, []);
+  const fetchEmployees = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/emp`);
+      if (res.ok) setEmployees(await res.json());
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => { 
+    fetchTasks(); 
+    fetchEmployees();
+  }, []);
 
   const handleProgress = async (taskId) => {
     if (!updateText[taskId]) return; 
@@ -368,6 +380,26 @@ function EmployeeDashboard({ token }) {
         alert(error.detail);
       }
     } catch (err) { alert("Failed to complete"); }
+  };
+
+  const handleReassign = async (taskId) => {
+    const newEmpId = reassignId[taskId];
+    if (!newEmpId) return alert("Please select an employee to reassign to.");
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/tasks/${taskId}/reassign`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ new_empid: newEmpId })
+      });
+      if (res.ok) {
+        alert("Task Reassigned!");
+        fetchTasks();
+      } else {
+        const error = await res.json();
+        alert(error.detail || "Failed to reassign task");
+      }
+    } catch (err) { alert("Failed to reassign"); }
   };
 
   const formatDueDate = (dateStr) => {
@@ -444,6 +476,21 @@ function EmployeeDashboard({ token }) {
                           {t.status === 'In Progress' && (
                              <button onClick={() => handleComplete(t._id)} className="btn btn-success" style={{ padding: '4px' }}>Mark Done (Send to QA)</button>
                           )}
+                          <div style={{ display: 'flex', gap: '5px', marginTop: '5px' }}>
+                            <select 
+                              className="file-input" style={{ width: '150px', padding: '4px' }}
+                              value={reassignId[t._id] || ""}
+                              onChange={(e) => setReassignId({...reassignId, [t._id]: e.target.value})}
+                            >
+                              <option value="">Select Colleague</option>
+                              {employees
+                                .filter(e => e.employee_id !== t.empid && (!t.category || e.primary_category === t.category))
+                                .map(e => (
+                                <option key={e.employee_id} value={e.employee_id}>{e.name} ({e.primary_category})</option>
+                              ))}
+                            </select>
+                            <button onClick={() => handleReassign(t._id)} className="btn btn-danger" style={{ padding: '4px' }}>Reassign</button>
+                          </div>
                         </div>
                       ) : (
                         <div style={{ fontSize: '12px', whiteSpace: 'pre-wrap' }}>{t.taskupdate}</div>
@@ -590,7 +637,10 @@ function AIChatbot() {
       const res = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage.text })
+        body: JSON.stringify({ 
+          message: userMessage.text,
+          history: messages.map(m => ({ role: m.role, text: m.text }))
+        })
       });
       
       const data = await res.json();
@@ -610,13 +660,14 @@ function AIChatbot() {
       {/* Chatbot Toggle Button */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
+        className="chatbot-toggle-btn"
         style={{
           position: 'fixed', bottom: '30px', right: '30px',
           backgroundColor: '#2563eb', color: 'white', border: 'none',
           borderRadius: '50%', width: '60px', height: '60px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)', cursor: 'pointer',
           fontSize: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 1000, transition: 'transform 0.2s'
+          zIndex: 1000
         }}
         title="Chat with AI"
       >
@@ -625,9 +676,9 @@ function AIChatbot() {
 
       {/* Chatbot Window */}
       {isOpen && (
-        <div style={{
+        <div className="chat-window-container" style={{
           position: 'fixed', bottom: '100px', right: '30px',
-          width: '350px', height: '500px', backgroundColor: 'white',
+          width: '500px', height: '600px', backgroundColor: 'white',
           borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
           display: 'flex', flexDirection: 'column', zIndex: 1000,
           border: '1px solid #e2e8f0', overflow: 'hidden'
@@ -651,16 +702,21 @@ function AIChatbot() {
                 display: 'flex', width: '100%',
                 justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
               }}>
-                <div style={{
-                  maxWidth: '80%', padding: '10px 14px', borderRadius: '15px',
+                <div className="chatbot-message" style={{
+                  maxWidth: '90%', padding: '10px 14px', borderRadius: '15px',
                   fontSize: '14px', lineHeight: '1.4',
                   backgroundColor: msg.role === 'user' ? '#2563eb' : '#e2e8f0',
                   color: msg.role === 'user' ? 'white' : '#1e293b',
                   borderBottomRightRadius: msg.role === 'user' ? '4px' : '15px',
                   borderBottomLeftRadius: msg.role === 'ai' ? '4px' : '15px',
-                  whiteSpace: 'pre-wrap'
+                  whiteSpace: msg.role === 'user' ? 'pre-wrap' : 'normal',
+                  overflowX: 'auto'
                 }}>
-                  {msg.text}
+                  {msg.role === 'user' ? (
+                    msg.text
+                  ) : (
+                    <div dangerouslySetInnerHTML={{ __html: msg.text }} />
+                  )}
                 </div>
               </div>
             ))}

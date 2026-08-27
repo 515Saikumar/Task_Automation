@@ -14,6 +14,9 @@ class TaskQAReview(BaseModel):
     remarks: str
     status: str
 
+class TaskReassign(BaseModel):
+    new_empid: str
+
 # ==========================================
 # 1. GET OWN TASKS (Employee Only)
 # ==========================================
@@ -50,6 +53,50 @@ def update_progress(task_id: str, update_data: TaskProgressUpdate, user: dict = 
         {"$set": {"status": "In Progress", "taskupdate": combined_update, "updatedAt": datetime.now(timezone.utc)}}
     )
     return {"message": "Progress updated successfully"}
+
+# ==========================================
+# 2.5 REASSIGN TASK (Employee Only)
+# ==========================================
+@router.patch("/{task_id}/reassign", dependencies=[Depends(RequireRole(["employee"]))])
+def reassign_task(task_id: str, reassign_data: TaskReassign, user: dict = Depends(get_current_user)):
+    task = workprogress_collection.find_one({"_id": ObjectId(task_id)})
+    if not task: raise HTTPException(404, "Task not found")
+    if task["empid"] != user["empid"]: raise HTTPException(403, "You do not own this task")
+    
+    new_emp = emp_collection.find_one({"employee_id": reassign_data.new_empid})
+    if not new_emp: raise HTTPException(404, "New employee not found")
+    
+    ist_tz = timezone(timedelta(hours=5, minutes=30))
+    current_time = datetime.now(ist_tz).strftime('%Y-%m-%d %I:%M %p')
+    
+    new_entry = f"[{current_time}] [System] Task reassigned from {task['empname']} ({task['empid']}) to {new_emp['name']} ({new_emp['employee_id']}) due to leave/reassignment."
+    
+    existing_update = task.get("taskupdate", "")
+    combined_update = existing_update + "\n" + new_entry if existing_update else new_entry
+    
+    # Maintain contributors history
+    contributors = task.get("contributors", [])
+    if task["empid"] not in [c["empid"] for c in contributors]:
+        contributors.append({"empid": task["empid"], "name": task["empname"]})
+    
+    workprogress_collection.update_one(
+        {"_id": ObjectId(task_id)},
+        {"$set": {
+            "empid": new_emp["employee_id"],
+            "empname": new_emp["name"],
+            "taskupdate": combined_update,
+            "contributors": contributors,
+            "updatedAt": datetime.now(timezone.utc)
+        }}
+    )
+    
+    # Update active tasks count
+    old_emp = emp_collection.find_one({"employee_id": task["empid"]})
+    if old_emp:
+        emp_collection.update_one({"employee_id": task["empid"]}, {"$set": {"active_tasks": max(0, old_emp.get("active_tasks", 1) - 1)}})
+    emp_collection.update_one({"employee_id": new_emp["employee_id"]}, {"$set": {"active_tasks": new_emp.get("active_tasks", 0) + 1}})
+    
+    return {"message": f"Task reassigned successfully to {new_emp['name']}."}
 
 # ==========================================
 # 3. MARK COMPLETED (Employee Only)

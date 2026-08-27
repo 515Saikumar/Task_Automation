@@ -292,3 +292,29 @@ body {
   66% { content: '...'; }
   100% { content: ''; }
 }
+
+/* AI Chatbot HTML Styles */
+.chatbot-message table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 13px;
+  background-color: white;
+}
+.chatbot-message th, .chatbot-message td {
+  border: 1px solid #cbd5e1;
+  padding: 6px;
+  text-align: left;
+}
+.chatbot-message th {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+.chatbot-message ul, .chatbot-message ol {
+  margin-left: 20px;
+  margin-top: 5px;
+  margin-bottom: 5px;
+}
+.chatbot-message p {
+  margin-bottom: 8px;
+}

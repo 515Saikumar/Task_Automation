@@ -178,7 +178,31 @@ def query_workprogress(search_term: str) -> str:
                     }
                 },
                 {
+                    "empname": {
+                        "$regex": search_term,
+                        "$options": "i"
+                    }
+                },
+                {
+                    "contributors.empid": {
+                        "$regex": search_term,
+                        "$options": "i"
+                    }
+                },
+                {
+                    "contributors.name": {
+                        "$regex": search_term,
+                        "$options": "i"
+                    }
+                },
+                {
                     "task": {
+                        "$regex": search_term,
+                        "$options": "i"
+                    }
+                },
+                {
+                    "category": {
                         "$regex": search_term,
                         "$options": "i"
                     }
@@ -231,19 +255,31 @@ def query_workprogress(search_term: str) -> str:
 def get_all_workprogress() -> str:
     """
     Returns ALL employee work progress records. Use this tool when the user asks for:
-    - Tasks on a specific date (like 'today' or 'yesterday')
-    - All completed tasks
-    - A general summary of all tasks
+    - A specific team, domain, or role (e.g. "aiml team", "frontend")
+    - Tasks completed "today" or on a specific date
+    - All completed/pending tasks in general
+    - A summary of all tasks
     
-    You can then filter the returned JSON array yourself to find tasks matching the specific date or status requested by the user.
+    You can then filter the returned JSON array yourself. Each task record includes 'employee_team' and 'employee_department' to help you perfectly filter tasks by team!
     """
     try:
         from datetime import datetime
         results = list(workprogress_collection.find({}, {"_id": 0}))
+        
+        # Enrich with employee details so the LLM can easily group by team
         for doc in results:
+            empid = doc.get("empid")
+            if empid:
+                from database.mongodb import emp_collection
+                emp = emp_collection.find_one({"employee_id": empid})
+                if emp:
+                    doc["employee_team"] = emp.get("primary_category", "")
+                    doc["employee_department"] = emp.get("department", "")
+            
             for key, value in doc.items():
                 if isinstance(value, datetime):
                     doc[key] = value.isoformat()
+                    
         return json.dumps(results, default=str)
     except Exception as e:
         return f"Error querying database: {str(e)}"
@@ -283,34 +319,38 @@ You can access employee work progress information
 from the MongoDB database using the provided tools.
 
 When the user asks about specific names or IDs:
-use the `query_workprogress` tool.
+use the `query_workprogress` tool. If the user makes a typo in the name (e.g. "priys" instead of "Priya"), try to correct it before searching.
+If `query_workprogress` returns no results, DO NOT immediately give up. Instead, use the `get_all_workprogress` tool to retrieve all records and manually look for similar employee names to handle typos gracefully.
 
 When the user asks about:
+- A specific team, domain, or role (e.g. "aiml team", "frontend")
 - Tasks completed "today" or on a specific date
 - All completed/pending tasks in general
 - A summary of all tasks
-use the `get_all_workprogress` tool and filter the returned JSON list yourself to find the exact matches (e.g. checking the 'status' and date fields like 'uploaded_at').
+use the `get_all_workprogress` tool! Pull all records and filter the JSON list yourself to find EVERY single task (both completed and ongoing) related to that team/domain. Do not use `query_workprogress` for team queries, as it might miss tasks.
 
 Note: Tasks are usually considered completed if their status is 'Done' or 'Approved'.
 
 Answer the user clearly and concisely.
 
 CRITICAL FORMATTING INSTRUCTIONS:
-When listing tasks or returning multiple pieces of information, YOU MUST use clean, plain text bullet points. DO NOT use Markdown bolding (asterisks) like **Employee:** because the chat window cannot render them.
-
-Format EACH task distinctly like this:
-- Employee: [Employee Name] ([ID])
-- Task: [Task Description]
-- Status: [Status]
-- Date: [Date]
-
-NEVER output everything in a single dense paragraph. Always use line breaks and bullet points.
+You MUST format your response strictly in HTML.
+DO NOT use Markdown (no asterisks, no hash tags, no markdown tables). Do NOT wrap the output in ```html codeblocks. Return pure HTML.
+When the user asks about a team, domain, role, or asks for "overall updates" (e.g. "aiml team", "frontend tasks", "overall updates"), output a clean HTML <table> with columns: Employee Name, Employee ID, Task, Status, Due Date, and Previous Contributors.
+When the user asks about a specific person or their personal work progress (e.g. "what about emp001", "Aarav's tasks"), provide a nicely formatted HTML list (<ul> <li>) and use <strong> for emphasis. 
+CRITICAL: When listing tasks for a specific person, you MUST include ALL tasks where they are the current owner (`empid`) AND any tasks where they are listed in the `contributors` array! Do not skip tasks just because they were reassigned to someone else.
+IMPORTANT: Tasks might have a 'contributors' array if they were reassigned. If so, you MUST explicitly list the previous contributors (e.g. EMP001) in both the summary tables and personal lists so they get credit for the work they did before reassignment!
+Format beautifully and be concise.
 
 Do not invent employee information.
 
 If the database does not contain the requested information,
 clearly tell the user that no matching records were found.
 """
+        ),
+        (
+            "placeholder",
+            "{chat_history}"
         ),
         (
             "human",
@@ -350,8 +390,15 @@ agent_executor = AgentExecutor(
 # CHAT REQUEST MODEL
 # ============================================================
 
+from typing import List
+
+class ChatMessage(BaseModel):
+    role: str
+    text: str
+
 class ChatRequest(BaseModel):
     message: str
+    history: List[ChatMessage] = []
 
 
 # ============================================================
@@ -361,10 +408,21 @@ class ChatRequest(BaseModel):
 @app.post("/api/chat")
 def chat_endpoint(request: ChatRequest):
     try:
+        from langchain_core.messages import HumanMessage, AIMessage
+        
+        # Build memory from frontend history
+        chat_history = []
+        for msg in request.history:
+            if msg.role == 'user':
+                chat_history.append(HumanMessage(content=msg.text))
+            elif msg.role == 'ai':
+                chat_history.append(AIMessage(content=msg.text))
+
         # Run LangChain agent
         response = agent_executor.invoke(
             {
-                "input": request.message
+                "input": request.message,
+                "chat_history": chat_history
             }
         )
 
