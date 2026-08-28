@@ -112,6 +112,173 @@ def get_recent_task_files():
         print(f"Error fetching tasks: {e}")
         return []
 
+# ============================================================
+# EXPORT TASKS TO CSV (NEW FEATURE)
+# ============================================================
+import pandas as pd
+from fastapi.responses import StreamingResponse
+import io
+
+@app.get("/api/export-tasks")
+def export_tasks_excel(time_filter: str = None):
+    try:
+        from datetime import datetime, timedelta, timezone
+        import json
+        
+        query = {}
+        now = datetime.now(timezone.utc)
+        
+        if time_filter == "today":
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = {"$or": [{"updatedAt": {"$gte": start_of_day}}, {"createdAt": {"$gte": start_of_day}}]}
+        elif time_filter == "this_week":
+            start_of_week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            query = {"$or": [{"updatedAt": {"$gte": start_of_week}}, {"createdAt": {"$gte": start_of_week}}]}
+        elif time_filter == "last_week":
+            start_of_this_week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            start_of_last_week = start_of_this_week - timedelta(days=7)
+            query = {"$or": [
+                {"updatedAt": {"$gte": start_of_last_week, "$lt": start_of_this_week}},
+                {"createdAt": {"$gte": start_of_last_week, "$lt": start_of_this_week}}
+            ]}
+
+        results = list(workprogress_collection.find(query, {"_id": 0}))
+        
+        if not results:
+            df = pd.DataFrame([{"Message": "No tasks found for this period."}])
+        else:
+            # Prepare clean data
+            clean_list = []
+            for r in results:
+                contribs = r.get('contributors', [])
+                if isinstance(contribs, list) and contribs:
+                    contrib_str = ', '.join([f"{c.get('name')} ({c.get('empid')})" for c in contribs])
+                else:
+                    contrib_str = ""
+                
+                clean_list.append({
+                    "Employee Name": r.get('empname', ''),
+                    "Employee ID": r.get('empid', ''),
+                    "Task": r.get('task', ''),
+                    "Status": r.get('status', ''),
+                    "Priority": r.get('priority', ''),
+                    "Category": r.get('category', ''),
+                    "Due Date": r.get('duedate', ''),
+                    "Remarks": r.get('remarks', ''),
+                    "Previous Contributors": contrib_str
+                })
+            
+            # --- LLM RESTRUCTURING ---
+            # Ask the LLM to professionally rewrite the 'Task' and 'Remarks' fields.
+            llm_prompt = f"""
+            You are a professional Executive Assistant. I will provide a JSON array of employee tasks.
+            Your job is to rewrite the "Task" and "Remarks" fields to sound highly professional, clear, and well-structured.
+            Fix any spelling or grammar mistakes (e.g. "crate a dockar file" -> "Create a Docker file").
+            Return ONLY the updated JSON array of objects. Do NOT include markdown code blocks, just the raw JSON array.
+            
+            Here is the data:
+            {json.dumps(clean_list, default=str)}
+            """
+            
+            try:
+                # We reuse the llm defined below in app.py
+                llm_response = llm.invoke(llm_prompt)
+                raw_json = llm_response.content.strip()
+                # Clean up if the LLM adds markdown by mistake
+                if raw_json.startswith("```json"):
+                    raw_json = raw_json[7:-3]
+                elif raw_json.startswith("```"):
+                    raw_json = raw_json[3:-3]
+                
+                professional_data = json.loads(raw_json)
+                df = pd.DataFrame(professional_data)
+            except Exception as e:
+                print(f"LLM rewriting failed, falling back to original data: {e}")
+                df = pd.DataFrame(clean_list)
+            
+            # Format dates beautifully if they exist
+            if 'Due Date' in df.columns:
+                df['Due Date'] = pd.to_datetime(df['Due Date'], errors='ignore').dt.strftime('%Y-%m-%d')
+            
+        output = io.BytesIO()
+        
+        # Write to actual Excel using openpyxl for formatting
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Tasks')
+            worksheet = writer.sheets['Tasks']
+            
+            from openpyxl.styles import Font, PatternFill, Alignment
+            
+            # Define styles
+            header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True)
+            wrap_alignment = Alignment(wrap_text=True, vertical='top')
+            
+            # Apply styles to headers
+            for cell in worksheet[1]:
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+            # Set column widths and apply wrap text to Task and Remarks
+            col_widths = {
+                "A": 20, # Employee Name
+                "B": 15, # Employee ID
+                "C": 45, # Task
+                "D": 15, # Status
+                "E": 12, # Priority
+                "F": 15, # Category
+                "G": 12, # Due Date
+                "H": 45, # Remarks
+                "I": 25  # Previous Contributors
+            }
+            
+            for col_letter, width in col_widths.items():
+                worksheet.column_dimensions[col_letter].width = width
+            
+            # Additional styles for conditional formatting
+            overdue_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid") # Light Red
+            completed_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid") # Light Green
+            
+            today_date = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Apply wrap text to all data rows and conditional formatting
+            for row in worksheet.iter_rows(min_row=2):
+                for cell in row:
+                    cell.alignment = wrap_alignment
+                    
+                # Get Status and Due Date values
+                status_cell = row[3] # Status is 4th column (Index 3)
+                due_date_cell = row[6] # Due Date is 7th column (Index 6)
+                
+                status_val = str(status_cell.value).strip().lower() if status_cell.value else ""
+                due_date_val = due_date_cell.value
+                
+                # Check for Completion (Green)
+                if status_val in ["approved", "done", "completed"]:
+                    due_date_cell.fill = completed_fill
+                    status_cell.fill = completed_fill
+                else:
+                    # Check for Overdue (Red)
+                    if due_date_val:
+                        try:
+                            # Due Date is currently a string in YYYY-MM-DD format based on our earlier formatting
+                            due_date_obj = datetime.strptime(str(due_date_val), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                            if due_date_obj < today_date:
+                                due_date_cell.fill = overdue_fill
+                                status_cell.fill = overdue_fill
+                        except Exception as e:
+                            pass # Silently pass if date parsing fails
+
+        output.seek(0)
+        
+        headers = {
+            'Content-Disposition': f'attachment; filename="tasks_professional_{time_filter or "all"}.xlsx"'
+        }
+        return StreamingResponse(output, headers=headers, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    except Exception as e:
+        return {"error": str(e)}
+
 
 # ============================================================
 # UPLOAD EXCEL FILE (FIX FOR /api/upload-excel 404)
@@ -252,19 +419,39 @@ def query_workprogress(search_term: str) -> str:
 
 
 @tool
-def get_all_workprogress() -> str:
+def get_all_workprogress(time_filter: str = None) -> str:
     """
-    Returns ALL employee work progress records. Use this tool when the user asks for:
+    Returns employee work progress records. Use this tool when the user asks for:
     - A specific team, domain, or role (e.g. "aiml team", "frontend")
-    - Tasks completed "today" or on a specific date
+    - Tasks completed "today", "this week", "last week", etc.
     - All completed/pending tasks in general
     - A summary of all tasks
     
-    You can then filter the returned JSON array yourself. Each task record includes 'employee_team' and 'employee_department' to help you perfectly filter tasks by team!
+    If the user asks for updates within a specific timeframe, pass 'time_filter' as one of: 'today', 'this_week', 'last_week'. Leave blank for all records.
     """
     try:
-        from datetime import datetime
-        results = list(workprogress_collection.find({}, {"_id": 0}))
+        from datetime import datetime, timedelta, timezone
+        
+        query = {}
+        now = datetime.now(timezone.utc)
+        
+        if time_filter == "today":
+            start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            query = {"$or": [{"updatedAt": {"$gte": start_of_day}}, {"createdAt": {"$gte": start_of_day}}]}
+        elif time_filter == "this_week":
+            # Monday of current week
+            start_of_week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            query = {"$or": [{"updatedAt": {"$gte": start_of_week}}, {"createdAt": {"$gte": start_of_week}}]}
+        elif time_filter == "last_week":
+            # Monday of last week to Sunday of last week
+            start_of_this_week = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+            start_of_last_week = start_of_this_week - timedelta(days=7)
+            query = {"$or": [
+                {"updatedAt": {"$gte": start_of_last_week, "$lt": start_of_this_week}},
+                {"createdAt": {"$gte": start_of_last_week, "$lt": start_of_this_week}}
+            ]}
+
+        results = list(workprogress_collection.find(query, {"_id": 0}))
         
         # Enrich with employee details so the LLM can easily group by team
         for doc in results:
@@ -315,6 +502,8 @@ prompt = ChatPromptTemplate.from_messages(
             """
 You are a helpful HR and Project Management assistant.
 
+The current date and time is: {current_datetime}
+
 You can access employee work progress information
 from the MongoDB database using the provided tools.
 
@@ -324,10 +513,10 @@ If `query_workprogress` returns no results, DO NOT immediately give up. Instead,
 
 When the user asks about:
 - A specific team, domain, or role (e.g. "aiml team", "frontend")
-- Tasks completed "today" or on a specific date
+- Tasks completed "today", "this week", "last week", or on a specific date
 - All completed/pending tasks in general
 - A summary of all tasks
-use the `get_all_workprogress` tool! Pull all records and filter the JSON list yourself to find EVERY single task (both completed and ongoing) related to that team/domain. Do not use `query_workprogress` for team queries, as it might miss tasks.
+use the `get_all_workprogress` tool! Pull all records and filter the JSON list yourself to find EVERY single task (both completed and ongoing) related to that team/domain or time period. Do not use `query_workprogress` for team/time queries, as it might miss tasks.
 
 Note: Tasks are usually considered completed if their status is 'Done' or 'Approved'.
 
@@ -336,6 +525,12 @@ Answer the user clearly and concisely.
 CRITICAL FORMATTING INSTRUCTIONS:
 You MUST format your response strictly in HTML.
 DO NOT use Markdown (no asterisks, no hash tags, no markdown tables). Do NOT wrap the output in ```html codeblocks. Return pure HTML.
+
+EXPORTING TO EXCEL/CSV:
+If the user explicitly asks to "download", "export", or wants the data "into excel" or "CSV", DO NOT print out the raw CSV text. Instead, provide a beautiful HTML download link that points to the `/api/export-tasks` endpoint. 
+Example: `<a href="http://127.0.0.1:10000/api/export-tasks?time_filter=this_week" download="Tasks.csv" style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">📥 Download Excel/CSV File</a>`
+(Make sure to use the correct `time_filter`: 'today', 'this_week', 'last_week', or omit it for all tasks).
+
 When the user asks about a team, domain, role, or asks for "overall updates" (e.g. "aiml team", "frontend tasks", "overall updates"), output a clean HTML <table> with columns: Employee Name, Employee ID, Task, Status, Due Date, and Previous Contributors.
 When the user asks about a specific person or their personal work progress (e.g. "what about emp001", "Aarav's tasks"), provide a nicely formatted HTML list (<ul> <li>) and use <strong> for emphasis. 
 CRITICAL: When listing tasks for a specific person, you MUST include ALL tasks where they are the current owner (`empid`) AND any tasks where they are listed in the `contributors` array! Do not skip tasks just because they were reassigned to someone else.
@@ -422,7 +617,8 @@ def chat_endpoint(request: ChatRequest):
         response = agent_executor.invoke(
             {
                 "input": request.message,
-                "chat_history": chat_history
+                "chat_history": chat_history,
+                "current_datetime": datetime.now().isoformat()
             }
         )
 
