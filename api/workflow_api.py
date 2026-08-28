@@ -17,6 +17,62 @@ class TaskQAReview(BaseModel):
 class TaskReassign(BaseModel):
     new_empid: str
 
+class ManualTaskAllocation(BaseModel):
+    empid: str
+    task: str
+    description: str = ""
+    priority: str = "Normal"
+    category: str = "General"
+    due_date: str = ""
+
+# ==========================================
+# 0. MANUAL TASK ALLOCATION (Admin/Manager)
+# ==========================================
+@router.post("/allocate")
+def allocate_task_manually(task_data: ManualTaskAllocation):
+    emp = emp_collection.find_one({"employee_id": task_data.empid})
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+        
+    try:
+        due_date_val = datetime.strptime(task_data.due_date, "%Y-%m-%d") if task_data.due_date else ""
+    except ValueError:
+        due_date_val = task_data.due_date
+        
+    workprogress_doc = {
+        "empid": emp["employee_id"],
+        "empname": emp["name"],
+        "task": task_data.task,
+        "description": task_data.description,
+        "priority": task_data.priority,
+        "required_skills": [],
+        "category": task_data.category,
+        "dependencies": [],
+        "duedate": due_date_val,
+        "taskupdate": "",
+        "status": "In Progress",
+        "remarks": "",
+        "contributors": [],
+        "createdAt": datetime.now(timezone.utc),
+        "updatedAt": datetime.now(timezone.utc)
+    }
+    
+    workprogress_collection.insert_one(workprogress_doc)
+    
+    new_active = emp.get("active_tasks", 0) + 1
+    max_tasks = emp.get("max_tasks", 4)
+    new_availability = new_active < max_tasks
+    
+    emp_collection.update_one(
+        {"employee_id": emp["employee_id"]},
+        {"$set": {
+            "active_tasks": new_active,
+            "availability": new_availability
+        }}
+    )
+    
+    return {"message": f"Task '{task_data.task}' manually assigned to {emp['name']}."}
+
 # ==========================================
 # 1. GET OWN TASKS (Employee Only)
 # ==========================================

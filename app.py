@@ -471,6 +471,65 @@ def get_all_workprogress(time_filter: str = None) -> str:
     except Exception as e:
         return f"Error querying database: {str(e)}"
 
+@tool
+def allocate_task(empid: str, task: str, priority: str = "Normal", category: str = "General", due_date: str = "") -> str:
+    """
+    Manually allocates a new task to a specific employee without using the Excel file.
+    Use this tool when the user asks to "assign", "allocate", or "give" a new task to an employee.
+    Ensure you have their employee ID (empid) before calling this.
+    """
+    try:
+        from database.mongodb import emp_collection, workprogress_collection
+        from datetime import datetime, timezone
+        
+        emp = emp_collection.find_one({"employee_id": empid})
+        if not emp:
+            # Fallback to searching by name if they passed a name instead of ID
+            emp = emp_collection.find_one({"name": {"$regex": empid, "$options": "i"}})
+            if not emp:
+                return f"Error: Could not find any employee with ID or name matching '{empid}'."
+                
+        try:
+            due_date_val = datetime.strptime(due_date, "%Y-%m-%d").strftime("%Y-%m-%d") if due_date else ""
+        except ValueError:
+            due_date_val = due_date
+            
+        workprogress_doc = {
+            "empid": emp["employee_id"],
+            "empname": emp["name"],
+            "task": task,
+            "description": "",
+            "priority": priority,
+            "required_skills": [],
+            "category": category,
+            "dependencies": [],
+            "duedate": due_date_val,
+            "taskupdate": "",
+            "status": "In Progress",
+            "remarks": "",
+            "contributors": [],
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc)
+        }
+        
+        workprogress_collection.insert_one(workprogress_doc)
+        
+        new_active = emp.get("active_tasks", 0) + 1
+        max_tasks = emp.get("max_tasks", 4)
+        new_availability = new_active < max_tasks
+        
+        emp_collection.update_one(
+            {"employee_id": emp["employee_id"]},
+            {"$set": {
+                "active_tasks": new_active,
+                "availability": new_availability
+            }}
+        )
+        
+        return f"Successfully allocated task '{task}' to {emp['name']} ({emp['employee_id']})."
+    except Exception as e:
+        return f"Failed to allocate task: {str(e)}"
+
 # ============================================================
 # INITIALIZE OPENAI LLM
 # ============================================================
@@ -487,7 +546,8 @@ llm = ChatGroq(
 
 tools = [
     query_workprogress,
-    get_all_workprogress
+    get_all_workprogress,
+    allocate_task
 ]
 
 
@@ -511,6 +571,9 @@ When the user asks about specific names or IDs:
 use the `query_workprogress` tool. If the user makes a typo in the name (e.g. "priys" instead of "Priya"), try to correct it before searching.
 If `query_workprogress` returns no results, DO NOT immediately give up. Instead, use the `get_all_workprogress` tool to retrieve all records and manually look for similar employee names to handle typos gracefully.
 
+When the user asks to assign a new task to someone:
+use the `allocate_task` tool! You can pass the employee's ID (or name), the task description, and optional due date/priority.
+
 When the user asks about:
 - A specific team, domain, or role (e.g. "aiml team", "frontend")
 - Tasks completed "today", "this week", "last week", or on a specific date
@@ -528,7 +591,7 @@ DO NOT use Markdown (no asterisks, no hash tags, no markdown tables). Do NOT wra
 
 EXPORTING TO EXCEL/CSV:
 If the user explicitly asks to "download", "export", or wants the data "into excel" or "CSV", DO NOT print out the raw CSV text. Instead, provide a beautiful HTML download link that points to the `/api/export-tasks` endpoint. 
-Example: `<a href="http://127.0.0.1:10000/api/export-tasks?time_filter=this_week" download="Tasks.csv" style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">📥 Download Excel/CSV File</a>`
+Example: `<a href="http://127.0.0.1:10000/api/export-tasks?time_filter=this_week" download="Tasks.xlsx" style="display: inline-block; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">📥 Download Professional Excel File</a>`
 (Make sure to use the correct `time_filter`: 'today', 'this_week', 'last_week', or omit it for all tasks).
 
 When the user asks about a team, domain, role, or asks for "overall updates" (e.g. "aiml team", "frontend tasks", "overall updates"), output a clean HTML <table> with columns: Employee Name, Employee ID, Task, Status, Due Date, and Previous Contributors.

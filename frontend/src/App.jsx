@@ -203,7 +203,21 @@ function AdminDashboard() {
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
         <button onClick={() => setAdminTab('overview')} className={adminTab === 'overview' ? 'tab-active' : 'tab-inactive'}>Global Task Overview</button>
         <button onClick={() => setAdminTab('upload')} className={adminTab === 'upload' ? 'tab-active' : 'tab-inactive'}>Upload & Files</button>
+        <button onClick={() => setAdminTab('manual')} className={adminTab === 'manual' ? 'tab-active' : 'tab-inactive'}>Manual Allocation</button>
       </div>
+
+      {adminTab === 'manual' && (
+        <div className="card">
+          <h3>Manual Task Allocation</h3>
+          <p style={{marginBottom: '15px', color: '#6b7280', fontSize: '14px'}}>Assign a task to an employee directly without an Excel file.</p>
+          <ManualAllocationForm onAllocated={() => {
+            fetchTaskOverview();
+            setStatusMsg("Task manually assigned successfully!");
+            setTimeout(() => setStatusMsg(""), 3000);
+          }} />
+          {statusMsg && <p className="status-msg" style={{color: 'green', marginTop: '10px'}}>{statusMsg}</p>}
+        </div>
+      )}
 
       {adminTab === 'upload' && (
         <>
@@ -764,5 +778,97 @@ function AIChatbot() {
         </div>
       )}
     </>
+  );
+}
+
+// ==========================================
+// MANUAL TASK ALLOCATION FORM
+// ==========================================
+function ManualAllocationForm({ onAllocated }) {
+  const [formData, setFormData] = useState({
+    empid: '',
+    task: '',
+    description: '',
+    priority: 'Normal',
+    category: 'General',
+    due_date: ''
+  });
+  const [employees, setEmployees] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/emp`)
+      .then(res => res.json())
+      .then(data => setEmployees(data))
+      .catch(err => console.error("Failed to load employees"));
+  }, []);
+
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError('');
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/tasks/allocate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || 'Allocation failed');
+      }
+      
+      setFormData({
+        empid: '', task: '', description: '', priority: 'Normal', category: 'General', due_date: ''
+      });
+      onAllocated();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', maxWidth: '500px' }}>
+      <select name="empid" value={formData.empid} onChange={handleChange} className="file-input" required>
+        <option value="">Select Employee</option>
+        {employees.map(emp => (
+          <option key={emp.employee_id} value={emp.employee_id}>
+            {emp.name} ({emp.employee_id} - {emp.primary_category})
+          </option>
+        ))}
+      </select>
+      
+      <input type="text" name="task" value={formData.task} onChange={handleChange} placeholder="Task Title" className="file-input" required />
+      
+      <textarea name="description" value={formData.description} onChange={handleChange} placeholder="Detailed Description (Optional)" className="file-input" style={{ minHeight: '80px', resize: 'vertical' }} />
+      
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <select name="priority" value={formData.priority} onChange={handleChange} className="file-input" style={{ flex: 1 }}>
+          <option value="Low">Low Priority</option>
+          <option value="Normal">Normal Priority</option>
+          <option value="High">High Priority</option>
+          <option value="Urgent">Urgent Priority</option>
+        </select>
+        
+        <input type="date" name="due_date" value={formData.due_date} onChange={handleChange} className="file-input" style={{ flex: 1 }} />
+      </div>
+      
+      <input type="text" name="category" value={formData.category} onChange={handleChange} placeholder="Category (e.g., AI/ML, Backend)" className="file-input" />
+      
+      {error && <p style={{ color: 'red', margin: 0, fontSize: '14px' }}>{error}</p>}
+      
+      <button type="submit" className="btn btn-primary" disabled={isLoading} style={{ marginTop: '10px' }}>
+        {isLoading ? 'Allocating...' : 'Allocate Task'}
+      </button>
+    </form>
   );
 }
