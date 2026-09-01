@@ -581,6 +581,9 @@ When the user asks about:
 - A summary of all tasks
 use the `get_all_workprogress` tool! Pull all records and filter the JSON list yourself to find EVERY single task (both completed and ongoing) related to that team/domain or time period. Do not use `query_workprogress` for team/time queries, as it might miss tasks.
 
+When the user asks about overdue tasks, past due tasks, or tasks that have crossed their due date:
+- A task is considered overdue if its due date is strictly BEFORE the current date, and its status is NOT 'Done' or 'Approved'. For example, if today is 2026-08-31, a task due on 2026-08-30 is overdue, but a task due on 2026-08-31 is NOT overdue yet.
+
 Note: Tasks are usually considered completed if their status is 'Done' or 'Approved'.
 
 Answer the user clearly and concisely.

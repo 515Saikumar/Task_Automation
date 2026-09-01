@@ -33,34 +33,48 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <nav className="navbar">
-        <h1>AI Task Manager</h1>
-        <div className="user-info">
-          {token ? (
-            <>
-              <span>ID: <strong>{empId}</strong> ({role?.toUpperCase()})</span>
-              <button onClick={handleLogout} className="btn btn-danger">Logout</button>
-            </>
-          ) : (
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button 
-                onClick={() => setView('admin')} 
-                style={{ backgroundColor: view === 'admin' ? '#1d4ed8' : '#3b82f6', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-              >
-                Public Admin (Upload)
-              </button>
-              <button 
-                onClick={() => setView('staff')} 
-                style={{ backgroundColor: view === 'staff' ? '#1d4ed8' : '#3b82f6', color: 'white', padding: '8px 16px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}
-              >
-                Secure Staff Portal
-              </button>
-            </div>
-          )}
+      {/* --- Sidebar Navigation --- */}
+      <aside className="sidebar">
+        <div className="sidebar-logo">
+          <span style={{ fontSize: '1.8rem' }}>⚡</span> Task Manager
         </div>
-      </nav>
+        
+        <div className="sidebar-menu">
+          {token ? (
+            <button className="sidebar-btn active">
+              <span style={{ fontSize: '1.2rem' }}>💻</span> My Workspace
+            </button>
+          ) : (
+              <>
+                <button 
+                  className={`sidebar-btn ${view === 'admin' ? 'active' : ''}`} 
+                  onClick={() => setView('admin')}
+                >
+                  <span style={{ fontSize: '1.2rem' }}>👑</span> Public Admin
+                </button>
+                <button 
+                  className={`sidebar-btn ${view === 'staff' ? 'active' : ''}`} 
+                  onClick={() => setView('staff')}
+                >
+                  <span style={{ fontSize: '1.2rem' }}>🔒</span> Staff Portal
+                </button>
+              </>
+            )}
+          </div>
 
-      <main className="main-content">
+          <div className="user-profile">
+            {token && (
+              <>
+                <div style={{fontSize: '0.85rem', color: 'var(--text-muted)'}}>Logged in as:</div>
+                <div style={{fontWeight: 'bold', color: 'white', marginBottom: '10px'}}>{empId} <span style={{fontSize:'0.8rem', color:'var(--accent-primary)'}}>({role?.toUpperCase()})</span></div>
+                <button onClick={handleLogout} className="btn btn-danger" style={{ width: '100%' }}>Logout</button>
+              </>
+            )}
+          </div>
+        </aside>
+
+      {/* --- Main Content Area --- */}
+      <main className="main-content custom-scroll">
         {token ? (
           role === 'qa' ? <QADashboard token={token} /> : <EmployeeDashboard token={token} />
         ) : (
@@ -200,7 +214,7 @@ function AdminDashboard() {
       <h2 className="dashboard-header">Public Admin Panel</h2>
       <p style={{marginBottom: "20px", color: "#4b5563"}}>Upload task lists here. The AI will automatically parse the Excel file, assign tasks to employees in MongoDB, and email them.</p>
       
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+      <div className="tab-container">
         <button onClick={() => setAdminTab('overview')} className={adminTab === 'overview' ? 'tab-active' : 'tab-inactive'}>Global Task Overview</button>
         <button onClick={() => setAdminTab('upload')} className={adminTab === 'upload' ? 'tab-active' : 'tab-inactive'}>Upload & Files</button>
         <button onClick={() => setAdminTab('manual')} className={adminTab === 'manual' ? 'tab-active' : 'tab-inactive'}>Manual Allocation</button>
@@ -249,7 +263,13 @@ function AdminDashboard() {
                       <tr key={f._id}>
                         <td style={{ fontSize: '0.875rem', color: '#6b7280' }}>{f._id}</td>
                         <td style={{ fontWeight: '500' }}>{f.filename}</td>
-                        <td><span className="badge">{f.status}</span></td>
+                        <td>
+                          <span className={`badge ${
+                            f.status === 'Completed' || f.status === 'Processed' ? 'badge-success' : 'badge-warning'
+                          }`}>
+                            {f.status}
+                          </span>
+                        </td>
                         <td style={{ fontSize: '0.875rem', color: '#4b5563' }}>
                           {new Date(f.uploaded_at).toLocaleString()}
                         </td>
@@ -267,24 +287,24 @@ function AdminDashboard() {
         <div className="card">
           <h3>Global Task Overview</h3>
           <p style={{marginBottom: '15px', color: '#6b7280', fontSize: '14px'}}>Click on a card below to filter the table.</p>
-          <div style={{ display: 'flex', gap: '20px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
             <div 
               onClick={() => setTaskFilter('all')}
-              style={{ flex: 1, backgroundColor: '#eff6ff', padding: '20px', borderRadius: '8px', textAlign: 'center', border: '1px solid #bfdbfe', cursor: 'pointer', opacity: taskFilter === 'all' ? 1 : 0.6, transform: taskFilter === 'all' ? 'scale(1.02)' : 'scale(1)', transition: 'all 0.2s' }}>
-              <h4 style={{ margin: 0, color: '#1e40af', fontSize: '1.2rem' }}>Total Tasks Processed</h4>
-              <p style={{ margin: '10px 0 0', fontSize: '2.5rem', fontWeight: 'bold', color: '#1d4ed8' }}>{taskOverview.total_tasks}</p>
+              className={`metric-card ${taskFilter === 'all' ? 'active' : ''}`}>
+              <h4>Total Tasks</h4>
+              <p>{taskOverview.total_tasks}</p>
             </div>
             <div 
               onClick={() => setTaskFilter('ongoing')}
-              style={{ flex: 1, backgroundColor: '#fffbeb', padding: '20px', borderRadius: '8px', textAlign: 'center', border: '1px solid #fde68a', cursor: 'pointer', opacity: taskFilter === 'ongoing' ? 1 : 0.6, transform: taskFilter === 'ongoing' ? 'scale(1.02)' : 'scale(1)', transition: 'all 0.2s' }}>
-              <h4 style={{ margin: 0, color: '#b45309', fontSize: '1.2rem' }}>Ongoing Tasks</h4>
-              <p style={{ margin: '10px 0 0', fontSize: '2.5rem', fontWeight: 'bold', color: '#d97706' }}>{taskOverview.ongoing_tasks}</p>
+              className={`metric-card ${taskFilter === 'ongoing' ? 'active' : ''}`}>
+              <h4>Ongoing</h4>
+              <p style={{background: 'linear-gradient(135deg, #f59e0b, #fbbf24)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>{taskOverview.ongoing_tasks}</p>
             </div>
             <div 
               onClick={() => setTaskFilter('completed')}
-              style={{ flex: 1, backgroundColor: '#f0fdf4', padding: '20px', borderRadius: '8px', textAlign: 'center', border: '1px solid #bbf7d0', cursor: 'pointer', opacity: taskFilter === 'completed' ? 1 : 0.6, transform: taskFilter === 'completed' ? 'scale(1.02)' : 'scale(1)', transition: 'all 0.2s' }}>
-              <h4 style={{ margin: 0, color: '#166534', fontSize: '1.2rem' }}>Tasks Completed</h4>
-              <p style={{ margin: '10px 0 0', fontSize: '2.5rem', fontWeight: 'bold', color: '#15803d' }}>{taskOverview.completed_tasks}</p>
+              className={`metric-card ${taskFilter === 'completed' ? 'active' : ''}`}>
+              <h4>Completed</h4>
+              <p style={{background: 'linear-gradient(135deg, #10b981, #34d399)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'}}>{taskOverview.completed_tasks}</p>
             </div>
           </div>
 
@@ -314,7 +334,13 @@ function AdminDashboard() {
                       <td style={{ fontWeight: '500' }}>{t.task}</td>
                       <td>{t.empname || t.empid}</td>
                       <td>{t.qa_name || "-"}</td>
-                      <td><span className="badge">{t.status}</span></td>
+                      <td>
+                        <span className={`badge ${
+                          t.status === 'Approved' || t.status === 'Done' ? 'badge-success' : 'badge-warning'
+                        }`}>
+                          {t.status}
+                        </span>
+                      </td>
                       <td style={{ fontSize: '0.875rem', color: '#4b5563' }}>
                         {new Date(t.duedate).toLocaleDateString()}
                       </td>
@@ -449,10 +475,9 @@ function EmployeeDashboard({ token }) {
                   <tr key={t._id}>
                     <td>{t.task}</td>
                     <td>
-                      <span className="badge" style={{
-                        backgroundColor: t.status === 'In Progress' ? '#dcfce7' : '#fef08a',
-                        color: t.status === 'In Progress' ? '#166534' : '#854d0e'
-                      }}>
+                      <span className={`badge ${
+                        t.status === 'In Progress' ? 'badge-success' : 'badge-warning'
+                      }`}>
                         {t.status}
                       </span>
                     </td>
@@ -460,10 +485,11 @@ function EmployeeDashboard({ token }) {
                     <td style={{ fontSize: '0.875rem', color: '#4b5563', fontWeight: '500' }}>{t.qa_name || <span style={{color: '#9ca3af', fontStyle: 'italic'}}>Pending...</span>}</td>
                     <td>
                       <div style={{ 
-                        color: '#b91c1c', fontSize: '12px', whiteSpace: 'pre-wrap', 
+                        color: '#f87171', fontSize: '12px', whiteSpace: 'pre-wrap', 
                         maxHeight: '80px', overflowY: 'auto', width: '220px',
-                        backgroundColor: t.remarks ? '#fee2e2' : 'transparent',
-                        padding: t.remarks ? '6px' : '0', borderRadius: '4px'
+                        backgroundColor: t.remarks ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                        padding: t.remarks ? '6px' : '0', borderRadius: '6px',
+                        border: t.remarks ? '1px solid rgba(239, 68, 68, 0.2)' : 'none'
                       }}>
                         {t.remarks || 'None'}
                       </div>
@@ -473,9 +499,10 @@ function EmployeeDashboard({ token }) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                           {t.taskupdate && (
                             <div style={{ 
-                              fontSize: '12px', background: '#f9fafb', border: '1px solid #e5e7eb',
-                              padding: '6px', borderRadius: '4px', whiteSpace: 'pre-wrap', 
-                              maxHeight: '80px', overflowY: 'auto', width: '250px'
+                              fontSize: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)',
+                              padding: '8px', borderRadius: '6px', whiteSpace: 'pre-wrap', 
+                              maxHeight: '80px', overflowY: 'auto', width: '250px',
+                              color: 'var(--text-main)'
                             }}>
                               {t.taskupdate}
                             </div>
@@ -570,18 +597,18 @@ function QADashboard({ token }) {
                     <td>{t.empid}</td>
                     <td>{t.task}</td>
                     <td>
-                      <span className="badge" style={{
-                        backgroundColor: t.status === 'Approved' ? '#dcfce7' : (t.status === 'Under QA Review' ? '#fef08a' : '#fee2e2'),
-                        color: t.status === 'Approved' ? '#166534' : (t.status === 'Under QA Review' ? '#854d0e' : '#b91c1c')
-                      }}>
+                      <span className={`badge ${
+                        t.status === 'Approved' ? 'badge-success' : (t.status === 'Under QA Review' ? 'badge-warning' : 'badge-danger')
+                      }`}>
                         {t.status}
                       </span>
                     </td>
                     <td>
                       <div style={{ 
-                         fontSize: '12px', background: '#f9fafb', border: '1px solid #e5e7eb',
-                         padding: '6px', borderRadius: '4px', whiteSpace: 'pre-wrap', 
-                         maxHeight: '120px', overflowY: 'auto', width: '250px'
+                         fontSize: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)',
+                         padding: '8px', borderRadius: '6px', whiteSpace: 'pre-wrap', 
+                         maxHeight: '120px', overflowY: 'auto', width: '250px',
+                         color: 'var(--text-main)'
                       }}>
                         {t.taskupdate || 'No update provided'}
                       </div>
@@ -602,9 +629,10 @@ function QADashboard({ token }) {
                         </div>
                       ) : (
                         <div style={{ 
-                          color: '#b91c1c', fontSize: '12px', whiteSpace: 'pre-wrap', 
+                          color: '#f87171', fontSize: '12px', whiteSpace: 'pre-wrap', 
                           maxHeight: '120px', overflowY: 'auto', width: '250px',
-                          backgroundColor: '#fee2e2', padding: '6px', borderRadius: '4px'
+                          backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: '8px', borderRadius: '6px',
+                          border: '1px solid rgba(239, 68, 68, 0.2)'
                         }}>
                           {t.remarks}
                         </div>
@@ -692,39 +720,39 @@ function AIChatbot() {
       {isOpen && (
         <div className="chat-window-container" style={{
           position: 'fixed', bottom: '100px', right: '30px',
-          width: '500px', height: '600px', backgroundColor: 'white',
-          borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-          display: 'flex', flexDirection: 'column', zIndex: 1000,
-          border: '1px solid #e2e8f0', overflow: 'hidden'
+          width: '500px', height: '600px',
+          borderRadius: '16px', display: 'flex', flexDirection: 'column', zIndex: 1000,
+          overflow: 'hidden'
         }}>
           {/* Header */}
-          <div style={{
-            backgroundColor: '#2563eb', color: 'white', padding: '15px',
-            fontWeight: 'bold', display: 'flex', justifyContent: 'space-between'
+          <div className="chat-header" style={{
+            padding: '18px', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between',
+            alignItems: 'center'
           }}>
-            <span>AI Progress Assistant</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '1.2rem' }}>✨</span> 
+              <span style={{ background: 'linear-gradient(135deg, #60a5fa, #a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontSize: '1.1rem' }}>AI Progress Assistant</span>
+            </div>
+            <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
           </div>
 
           {/* Messages Area */}
-          <div style={{
-            flex: 1, padding: '15px', overflowY: 'auto',
-            display: 'flex', flexDirection: 'column', gap: '10px',
-            backgroundColor: '#f8fafc'
+          <div className="chat-messages-area custom-scroll" style={{
+            flex: 1, padding: '20px', overflowY: 'auto',
+            display: 'flex', flexDirection: 'column', gap: '15px'
           }}>
             {messages.map((msg, index) => (
               <div key={index} style={{
                 display: 'flex', width: '100%',
                 justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start'
               }}>
-                <div className="chatbot-message" style={{
-                  maxWidth: '90%', padding: '10px 14px', borderRadius: '15px',
-                  fontSize: '14px', lineHeight: '1.4',
-                  backgroundColor: msg.role === 'user' ? '#2563eb' : '#e2e8f0',
-                  color: msg.role === 'user' ? 'white' : '#1e293b',
-                  borderBottomRightRadius: msg.role === 'user' ? '4px' : '15px',
-                  borderBottomLeftRadius: msg.role === 'ai' ? '4px' : '15px',
+                <div className={`chatbot-message ${msg.role === 'user' ? 'chat-user-msg' : 'chat-ai-msg'}`} style={{
+                  maxWidth: '85%', padding: '12px 16px', borderRadius: '16px',
+                  borderBottomRightRadius: msg.role === 'user' ? '4px' : '16px',
+                  borderBottomLeftRadius: msg.role === 'ai' ? '4px' : '16px',
                   whiteSpace: msg.role === 'user' ? 'pre-wrap' : 'normal',
-                  overflowX: 'auto'
+                  overflowX: 'auto',
+                  boxShadow: msg.role === 'user' ? '0 4px 15px rgba(59, 130, 246, 0.2)' : '0 4px 15px rgba(0,0,0,0.1)'
                 }}>
                   {msg.role === 'user' ? (
                     msg.text
@@ -736,12 +764,10 @@ function AIChatbot() {
             ))}
             {isLoading && (
               <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <div style={{
-                  padding: '10px 14px', borderRadius: '15px', fontSize: '14px',
-                  backgroundColor: '#e2e8f0', color: '#64748b', fontStyle: 'italic',
-                  borderBottomLeftRadius: '4px'
+                <div className="chat-ai-msg typing-dots" style={{
+                  padding: '12px 20px', borderRadius: '16px', fontSize: '14px',
+                  borderBottomLeftRadius: '4px', fontStyle: 'italic', letterSpacing: '2px'
                 }}>
-                  AI is thinking...
                 </div>
               </div>
             )}
@@ -749,27 +775,24 @@ function AIChatbot() {
           </div>
 
           {/* Input Area */}
-          <div style={{
-            padding: '15px', borderTop: '1px solid #e2e8f0',
-            display: 'flex', gap: '10px', backgroundColor: 'white'
+          <div className="chat-input-area" style={{
+            padding: '18px', display: 'flex', gap: '12px'
           }}>
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Ask about task status..."
-              style={{
-                flex: 1, padding: '10px', borderRadius: '8px',
-                border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px'
-              }}
+              placeholder="Ask AI anything..."
+              className="file-input"
+              style={{ flex: 1, borderRadius: '12px' }}
             />
             <button 
               onClick={handleSend} disabled={isLoading}
+              className="btn btn-primary"
               style={{
-                backgroundColor: '#2563eb', color: 'white', border: 'none',
-                padding: '0 15px', borderRadius: '8px', cursor: 'pointer',
-                fontWeight: 'bold', opacity: isLoading ? 0.7 : 1
+                padding: '0 20px', borderRadius: '12px',
+                opacity: isLoading ? 0.7 : 1
               }}
             >
               Send
