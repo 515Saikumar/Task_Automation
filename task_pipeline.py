@@ -39,12 +39,16 @@ def detect_category(text):
         "Project Management": ["planning", "meeting", "scrum", "agile", "jira", "sprint"]
     }
 
-    
+    category_counts = {category: 0 for category in categories}
     for category, keywords in categories.items():
         for keyword in keywords:
             if keyword in text:
-                return category
-    return "General"
+                category_counts[category] += text.count(keyword)
+                
+    if all(count == 0 for count in category_counts.values()):
+        return "General"
+        
+    return max(category_counts, key=category_counts.get)
 
 def extract_task(text):
     # Fallback for empty rows in Excel
@@ -59,6 +63,7 @@ Extract the "due_date" EXACTLY as it is written in the text (e.g., "Monday", "to
 If no date is mentioned, leave "due_date" as an empty string "".
 
 Determine the "category" of the task. It MUST be exactly one of the following: "AI/ML", "Backend", "PowerBI", "Frontend", "DevOps", "Database", "QA", "Cloud", "Security", "Project Management", or "General".
+Note: If the task is primarily about building a user interface, UI, or frontend, categorize it as "Frontend" even if the project itself involves AI or agents.
 
 Return ONLY valid JSON containing the following keys: "task_name", "priority", "due_date", "description", "required_skills", "category".
 Do not include any conversational text.
@@ -121,10 +126,12 @@ JSON Output:
     valid_categories = ["AI/ML", "Backend", "PowerBI", "Frontend", "DevOps", "Database", "QA", "Cloud", "Security", "Project Management"]
     
     # 2. If the AI failed or defaulted to General, fallback to our robust keyword matching
+    skills_str = " ".join(task.get("required_skills", []))
+    search_text = f"{text} {task.get('task_name', '')} {task.get('description', '')} {skills_str}"
+    
     if task.get("category") not in valid_categories:
-        skills_str = " ".join(task.get("required_skills", []))
-        search_text = f"{text} {task.get('task_name', '')} {task.get('description', '')} {skills_str}"
         task["category"] = detect_category(search_text)
+        
     task["dependencies"] = detect_dependencies(search_text)
     
     return task
