@@ -19,6 +19,7 @@ llm = ChatGroq(
 # Key: phrase that must appear at the START of the task text.
 # Value: the category it maps to.
 STRONG_SIGNALS = {
+    # ── Frontend ──────────────────────────────────────────────
     "create a frontend": "Frontend",
     "build a frontend": "Frontend",
     "design a frontend": "Frontend",
@@ -31,16 +32,33 @@ STRONG_SIGNALS = {
     "build a dashboard": "Frontend",
     "create a react": "Frontend",
     "build a react": "Frontend",
+    "create a login page": "Frontend",
+    "create a signup page": "Frontend",
+    # ── Backend ───────────────────────────────────────────────
     "create an api": "Backend",
     "build an api": "Backend",
     "create a rest api": "Backend",
     "write an api": "Backend",
+    # ── DevOps ────────────────────────────────────────────────
     "setup docker": "DevOps",
+    "setup ci/cd": "DevOps",
     "deploy the": "DevOps",
+    # ── AI/ML ─────────────────────────────────────────────────
     "train the model": "AI/ML",
     "train a model": "AI/ML",
     "build a rag": "AI/ML",
     "fine-tune": "AI/ML",
+    "build an nlp": "AI/ML",
+    # ── QA ────────────────────────────────────────────────────
+    "write pytest": "QA",
+    "write test cases": "QA",
+    "write unit test": "QA",
+    "write automation test": "QA",
+    "write automation": "QA",
+    # ── Security ──────────────────────────────────────────────
+    "vulnerability assessment": "Security",
+    "conduct a vulnerability": "Security",
+    "conduct a security": "Security",
 }
 
 def detect_dependencies(text):
@@ -52,50 +70,70 @@ def detect_dependencies(text):
             dependencies.append(match.group(1).strip().title())
     return dependencies
 
-def detect_category(text):
+def detect_category(primary_text, context_text=""):
     """Detect category using a two-pass approach:
-    1. Check high-priority STRONG_SIGNALS phrases (prefix-based).
-    2. Fall back to weighted keyword counting.
-    """
-    normalized = text.strip().lower()
+    1. Check high-priority STRONG_SIGNALS phrases on the primary task text only.
+    2. Fall back to weighted keyword counting using word-boundary matching.
 
-    # Pass 1: Strong signal phrases — these always win
+    Args:
+        primary_text: The original raw task text (used for strong-signal detection).
+        context_text: Additional context (task_name + description + skills) used
+                      only during keyword scoring, NOT for strong-signal matching.
+    """
+    primary_normalized = primary_text.strip().lower()
+
+    # Pass 1: Strong signal phrases — run ONLY on primary task text so that
+    # secondary context keywords (e.g. 'langchain' in skills) cannot override.
     for phrase, category in STRONG_SIGNALS.items():
-        if normalized.startswith(phrase) or f" {phrase} " in f" {normalized} ":
+        if primary_normalized.startswith(phrase) or f" {phrase} " in f" {primary_normalized} ":
             print(f"[Category] Strong signal matched: '{phrase}' -> {category}")
             return category
 
-    # Pass 2: Weighted keyword counting
+    # Pass 2: Weighted keyword counting with word-boundary matching.
+    # Combine primary + context for scoring but strong signals already
+    # returned above so context cannot hijack an obvious primary intent.
+    full_text = f"{primary_normalized} {context_text.strip().lower()}"
+
     categories = {
         "Frontend": ["frontend", "react", "angular", "vue", "nextjs", "html", "css",
                      "bootstrap", "tailwind", "javascript", "typescript", "ui", "ux",
                      "page", "screen", "component", "login page", "signup page"],
-        "Backend": ["backend", "api", "rest api", "fastapi", "flask", "django",
-                    "spring boot", "node", "express", "server", "microservice",
+        "Backend": ["backend", "rest api", "fastapi", "flask", "django",
+                    "spring boot", "express", "microservice",
                     "authentication", "jwt", "redis", "crud", "endpoint"],
         "AI/ML": ["machine learning", "deep learning", "llm", "rag", "langchain",
                   "embedding", "vector database", "faiss", "ollama", "huggingface",
                   "tensorflow", "pytorch", "scikit-learn", "nlp", "computer vision",
                   "prediction", "chatbot", "prompt engineering", "ai agent",
                   "language model", "generative ai", "fine tune", "fine-tune"],
-        "PowerBI": ["power bi", "powerbi", "report", "visualization", "dax",
-                    "measure", "power query", "etl", "data source"],
+        "PowerBI": ["power bi", "powerbi", "dax", "measure", "power query", "etl"],
         "DevOps": ["devops", "docker", "kubernetes", "terraform", "jenkins",
                    "deployment", "deploy", "ci/cd"],
-        "Database": ["database", "mongodb", "mysql", "postgresql", "query",
+        "Database": ["database", "mongodb", "mysql", "postgresql",
                      "schema", "migration"],
-        "QA": ["qa", "testing", "test case", "unit test", "automation",
+        "QA": ["testing", "test case", "unit test", "automation",
                "selenium", "pytest"],
-        "Cloud": ["cloud", "aws", "azure", "gcp", "lambda", "ec2", "s3"],
+        "Cloud": ["cloud", "aws", "azure", "gcp", "lambda", "ec2"],
         "Security": ["security", "oauth", "encryption", "vulnerability"],
         "Project Management": ["planning", "meeting", "scrum", "agile", "jira", "sprint"]
     }
 
-    category_counts = {category: 0 for category in categories}
+    # Weight multiplier: keywords matched in the primary text count 3x more
+    # than the same keyword found only in the supporting context.
+    WEIGHT_PRIMARY = 3
+    WEIGHT_CONTEXT = 1
+
+    category_counts = {category: 0.0 for category in categories}
     for category, keywords in categories.items():
         for keyword in keywords:
-            if keyword in normalized:
-                category_counts[category] += normalized.count(keyword)
+            # Use word-boundary regex to avoid substring false-positives
+            # (e.g. 'api' inside 'capability', 'server' inside 'observer')
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            primary_hits = len(re.findall(pattern, primary_normalized))
+            context_hits = len(re.findall(pattern, context_text.strip().lower()))
+            category_counts[category] += (
+                primary_hits * WEIGHT_PRIMARY + context_hits * WEIGHT_CONTEXT
+            )
 
     if all(count == 0 for count in category_counts.values()):
         return "General"
@@ -187,10 +225,15 @@ JSON Output:
     # Always override the LLM category with our deterministic keyword detector.
     # The LLM is unreliable for classification — it confuses 'agent' with AI/ML, etc.
     # detect_category uses high-priority phrase signals first, then weighted keyword scoring.
+    #
+    # IMPORTANT: Pass the original raw `text` as primary_text so that strong-signal
+    # detection runs only on what the user actually typed (e.g. "create a frontend...").
+    # The task_name + description + skills are passed as context_text and only influence
+    # keyword scoring at a lower weight — they cannot override a strong primary signal.
     skills_str = " ".join(task.get("required_skills", []))
-    search_text = f"{text} {task.get('task_name', '')} {task.get('description', '')} {skills_str}"
+    context_text = f"{task.get('task_name', '')} {task.get('description', '')} {skills_str}"
 
-    detected_category = detect_category(search_text)
+    detected_category = detect_category(text, context_text)
     if task.get("category") != detected_category:
         print(f"[Category Override] LLM said '{task.get('category')}', overriding with '{detected_category}'")
     task["category"] = detected_category
